@@ -55,7 +55,9 @@ def laplacian(W, normed=False, return_diag=False):
 
 if __name__ == '__main__':
   from matplotlib import pyplot
-  from synthetic_data import cylinder
+  #from synthetic_data import cylinder
+  with open('data/synthetic_data.py') as syndata:
+    exec(syndata.read())
   n,k = 300,5
   X = cylinder(np.linspace(0,4,n))
   adj = neighbor_graph(X=X,k=k)
