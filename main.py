@@ -14,7 +14,7 @@ sc.settings.verbosity = 0
 class Xct_metrics():
     __slots__ = ('genes', 'DB', '_genes_index_DB')
     def __init__(self, adata, specis = 'Human'): #adata: cellA * allgenes
-        if not ('raw' and 'log1p' in ada.layers.keys()):
+        if not ('raw' and 'log1p' in adata.layers.keys()):
             raise VauleError('require adata with raw and log1p count layers')
         else:
             self.genes = adata.var_names
