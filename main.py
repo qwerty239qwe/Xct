@@ -204,14 +204,14 @@ class Xct(Xct_metrics):
         for metric_A, metric_B, metric in zip(self._metric_A, self._metric_B, self._metric_names):
             filled_L = []
             filled_R = []
-            for i in np.ravel(index_L):
+            for i in index_L:
                 if i == 0:
                     filled_L.append(0) #none expression
                 else:
                     filled_L.append(np.round(metric_A[i-1], 11))
             filled_L = np.array(filled_L, dtype=float)
 
-            for i in np.ravel(index_R):
+            for i in index_R:
                 if i == 0:
                     filled_R.append(0)
                 else:
@@ -227,7 +227,7 @@ class Xct(Xct_metrics):
         
         if ref_obj is None:
             df = pd.concat([self.DB, df], axis=1) # concat 1:1 since sharing same index
-            mask1 = (df['mean_L1'] > 0) & (df['mean_R1'] > 0) # filter 0 for first LR
+            mask1 = (df['mean_L'] > 0) & (df['mean_R'] > 0) # filter 0 for first LR
             df = df[mask1]
             
         else: 
@@ -235,7 +235,7 @@ class Xct(Xct_metrics):
             df = pd.concat([ref_DB, df], axis=1)
             df.set_index(pd.Index(ref_obj.ref.index), inplace = True)
             
-        df.replace(to_replace={0:None}, inplace = True) #for geo mean: replace 0 to None
+        #df.replace(to_replace={0:None}, inplace = True) #for geo mean: replace 0 to None
         
         #df.to_csv('df.csv', index=False)
         if verbose:
