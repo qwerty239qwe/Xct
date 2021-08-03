@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import scanpy as sc
-from anndata import AnnData
+#from anndata import AnnData
 import scipy
 from scipy.optimize import least_squares
 import warnings
@@ -14,35 +14,35 @@ sc.settings.verbosity = 0
 class Xct_metrics():
     __slots__ = ('genes', 'DB', '_genes_index_DB')
     def __init__(self, adata, specis = 'Human'): #adata: cellA * allgenes
-        self.genes = adata.var_names
-        self.DB = self.Xct_DB()
-        self._genes_index_DB = self.get_index(DB = self.DB)
+        if not ('raw' and 'log1p' in ada.layers.keys()):
+            raise VauleError('require adata with raw and log1p count layers')
+        else:
+            self.genes = adata.var_names
+            self.DB = self.Xct_DB(specis = specis)
+            self._genes_index_DB = self.get_index(DB = self.DB)
 
     
     def Xct_DB(self, specis = 'Human'):
         if specis == 'Mouse':
-            LR = pd.read_csv('https://raw.githubusercontent.com/yjgeno/Ligand-Receptor-Pairs/master/Mouse/Mouse-2020-Jin-LR-pairs.csv')
+            pass
         if specis == 'Human':
-            LR = pd.read_csv('https://raw.githubusercontent.com/yjgeno/Ligand-Receptor-Pairs/master/Human/Human-2020-Jin-LR-pairs.csv')
-        ligands = LR['ligand'].str.split('_', expand=True)
-        ligands.columns = ['lig_A', 'lig_B']
-        receptors = LR['receptor'].str.split('_', expand=True)
-        receptors.columns = ['rec_A', 'rec_B', 'rec_C']
-        LRs = pd.concat([LR[['pathway_name']], ligands, receptors], axis=1)
+            LR = pd.read_csv('https://raw.githubusercontent.com/yjgeno/Xct/note/DB/omnipath_intercell_toUse_v1.csv')
+        LR_toUse = LR[['genesymbol_intercell_source', 'genesymbol_intercell_target']]
+        LR_toUse.columns = ['ligand', 'receptor']
         del LR
 
-        return LRs
+        return LR_toUse
     
     def subset(self):
-        genes = np.ravel(self.DB.iloc[:, 1:].values) #['lig_A', 'lig_B', 'rec_A', 'rec_B', 'rec_C']
+        genes = np.ravel(self.DB.values) 
         genes = np.unique(genes[genes != None])
         genes_use = self.genes.intersection(genes)
             
         return [list(self.genes).index(g) for g in genes_use]    #index in orig adata
     
     def get_index(self, DB):
-        g_LRs = DB.iloc[:, 1:6].values #['lig_A', 'lig_B', 'rec_A', 'rec_B', 'rec_C']
-        gene_list = [None] + list(self.genes) #LR genes intersect with DB
+        g_LRs = DB.iloc[:, :2].values #L-R
+        gene_list = [None] + list(self.genes) 
 
         gene_index = np.zeros(len(np.ravel(g_LRs)), dtype = int)
         for g in gene_list:
@@ -173,6 +173,8 @@ class Xct(Xct_metrics):
 
     def __init__(self, adata, CellA, CellB, pmt = False):
         Xct_metrics.__init__(self, adata)
+        self._CellA = CellA
+        self._CellB = CellB
         self._metric_names = ['mean', 'var', 'disp', 'cv', 'cv_res']
         ada_A = adata[adata.obs['ident'] == CellA, :].copy()
         ada_B = adata[adata.obs['ident'] == CellB, :].copy()
@@ -194,8 +196,8 @@ class Xct(Xct_metrics):
             genes_index = ref_obj.genes_index
         #print(genes_index)
         
-        index_L = genes_index[:, :2]
-        index_R = genes_index[:, 2:]
+        index_L = genes_index[:, 0]
+        index_R = genes_index[:, 1]
 
         df = pd.DataFrame()
 
@@ -207,18 +209,17 @@ class Xct(Xct_metrics):
                     filled_L.append(0) #none expression
                 else:
                     filled_L.append(np.round(metric_A[i-1], 11))
-            filled_L = np.array(filled_L, dtype=float).reshape(index_L.shape)
+            filled_L = np.array(filled_L, dtype=float)
 
             for i in np.ravel(index_R):
                 if i == 0:
                     filled_R.append(0)
                 else:
                     filled_R.append(np.round(metric_B[i-1], 11))
-            filled_R = np.array(filled_R, dtype=float).reshape(index_R.shape)
+            filled_R = np.array(filled_R, dtype=float)
 
-            filled = np.concatenate((filled_L, filled_R), axis=1)
-            result = pd.DataFrame(data = filled, columns = [f'{metric}_L1', f'{metric}_L2', 
-                                                             f'{metric}_R1', f'{metric}_R2', f'{metric}_R3'])
+            filled = np.concatenate((filled_L[:, None], filled_R[:, None]), axis=1)
+            result = pd.DataFrame(data = filled, columns = [f'{metric}_L', f'{metric}_R'])
             df = pd.concat([df, result], axis=1)
         
         #DB = skin.DB.reset_index(drop = True, inplace = False) 
@@ -228,29 +229,13 @@ class Xct(Xct_metrics):
             df = pd.concat([self.DB, df], axis=1) # concat 1:1 since sharing same index
             mask1 = (df['mean_L1'] > 0) & (df['mean_R1'] > 0) # filter 0 for first LR
             df = df[mask1]
-
-            pattern_orig = df.iloc[:, 1:6].isnull() #L-R complex
-            pattern_obs = df.iloc[:, 6:11].isin([0]) #mean expression
-            mask2 = (pattern_orig.values == pattern_obs.values).all(axis=1) # for LR complex
-            df = df[mask2]
             
         else: 
             ref_DB = self.DB.iloc[ref_obj.ref.index, :].reset_index(drop = True, inplace = False) #match index
             df = pd.concat([ref_DB, df], axis=1)
             df.set_index(pd.Index(ref_obj.ref.index), inplace = True)
             
-        
-        df.replace(to_replace={0:None}, inplace = True) #for geo mean
-        
-        for i, name in zip(range(6, 31, 5), self._metric_names):
-            lig = df.iloc[:, i:i+2]
-            rec = df.iloc[:, i+2:i+5]
-            if i < 26:
-                df[f'{name}_L'] = np.asarray(np.power(lig.prod(axis=1), 1./lig.notna().sum(1))) #L geomean: Kth root
-                df[f'{name}_R'] = np.asarray(np.power(rec.prod(axis=1), 1./rec.notna().sum(1))) #R
-            else:
-                df[f'{name}_L'] = np.asarray(lig.sum(axis = 1, skipna = True))
-                df[f'{name}_R'] = np.asarray(rec.sum(axis = 1, skipna = True))
+        df.replace(to_replace={0:None}, inplace = True) #for geo mean: replace 0 to None
         
         #df.to_csv('df.csv', index=False)
         if verbose:
@@ -269,7 +254,7 @@ class Xct(Xct_metrics):
         if method == 0:
             return S0  
         if method == 1:
-            S = (ref_DB['mean_L']**2 + a*ref_DB['var_L'])*(ref_DB['mean_R']**2 + a*ref_DB['var_R'])
+            S = (a*ref_DB['mean_L']**2 + ref_DB['var_L'])*(a*ref_DB['mean_R']**2 + ref_DB['var_R'])
             S = S/(0.5 + S)
         if method == 2:
             S = ref_DB['disp_L'] * ref_DB['disp_R']
@@ -279,14 +264,14 @@ class Xct(Xct_metrics):
             ref_DB['cv_res_L'][ref_DB['cv_res_L'] < 0] = 0
             S = abs(ref_DB['cv_res_L'] * ref_DB['cv_res_R'])
             S = S/(0.5+S) + a*S0
-            #S = S0 / (S/(0.5+S))
+
         if method == 5:
             S = ref_DB['cv_res_L'] + a*ref_DB['cv_res_R']
 
         return S #.astype(float)
       
       
-def scores(adata, ref_obj, method = 1, n = 100):
+def scores(adata, ref_obj, method = 0, a = 1, n = 100):
     result = []
     temp = adata.copy()
     
@@ -294,9 +279,9 @@ def scores(adata, ref_obj, method = 1, n = 100):
         labels_pmt = np.random.permutation(temp.obs['ident']) #pmt gloablly
         temp.obs['ident'] = labels_pmt
         #ada_pmt = pmt(adata)
-        pmt_obj = Xct(temp, 'Inflam. FIB', 'Inflam. DC', pmt =True)
+        pmt_obj = Xct(temp, ref_obj._CellA, ref_obj._CellB, pmt =True)
         df_pmt = pmt_obj.fill_metric(ref_obj = ref_obj)
-        result.append(pmt_obj.score(ref_DB = df_pmt, method = method))
+        result.append(pmt_obj.score(ref_DB = df_pmt, method = method, a = a))
     
     return np.array(result).T
   
