@@ -254,7 +254,7 @@ class Xct(Xct_metrics):
         if method == 0:
             return S0  
         if method == 1:
-            S = (a*ref_DB['mean_L']**2 + ref_DB['var_L'])*(a*ref_DB['mean_R']**2 + ref_DB['var_R'])
+            S = (ref_DB['mean_L']**2 + ref_DB['var_L']) + a*(ref_DB['mean_R']**2 + ref_DB['var_R'])
             S = S/(0.5 + S)
         if method == 2:
             S = ref_DB['disp_L'] * ref_DB['disp_R']
