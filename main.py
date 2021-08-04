@@ -26,7 +26,7 @@ class Xct_metrics():
     __slots__ = ('genes', 'DB', '_genes_index_DB')
     def __init__(self, adata, specis = 'Human'): #adata: cellA * allgenes
         if not ('raw' and 'log1p' in adata.layers.keys()):
-            raise VauleError('require adata with raw and log1p count layers')
+            raise NameError('require adata with count and normalized layers named \'raw\' and \'log1p\'')
         else:
             self.genes = adata.var_names
             self.DB = self.Xct_DB(specis = specis)
@@ -36,8 +36,10 @@ class Xct_metrics():
     def Xct_DB(self, specis = 'Human'):
         if specis == 'Mouse':
             pass
-        if specis == 'Human':
+        elif specis == 'Human':
             LR = pd.read_csv('https://raw.githubusercontent.com/yjgeno/Xct/note/DB/omnipath_intercell_toUse_v1.csv')
+        else:
+            raise NameError('Current DB only supports \'Mouse\' and \'Human\'')
         LR_toUse = LR[['genesymbol_intercell_source', 'genesymbol_intercell_target']]
         LR_toUse.columns = ['ligand', 'receptor']
         del LR
@@ -182,7 +184,7 @@ class Xct_metrics():
       
 class Xct(Xct_metrics):
 
-    def __init__(self, adata, CellA, CellB, pmt = False, RUNpcNet = False):
+    def __init__(self, adata, CellA, CellB, pmt = False, build_GRN = False, mode = None, pcNet_path = None): #mode: None, 'combinators', 'pairs'; pcNet_path: path to dir of two pcNet
         Xct_metrics.__init__(self, adata)
         self._CellA = CellA
         self._CellB = CellB
@@ -199,14 +201,24 @@ class Xct(Xct_metrics):
             self.ref = self.fill_metric()
             self.genes_index = self.get_index(DB = self.ref)
 
-        if RUNpcNet:
-            self._AX = ada_A.X
+        if build_GRN:
+            self._AX = ada_A.X # input array for nn projection
             self._BX = ada_B.X
-            self._net_A = pcNet(ada_A.X, nComp=5, symmetric=True)
-            self._net_B = pcNet(ada_B.X, nComp=5, symmetric=True)
-            self._w = self.build_w(queryDB = True, scale = True)
+            if pcNet_path is not None:
+                try:
+                    self._net_A = np.genfromtxt(f'{pcNet_path}/net_A.csv', delimiter="\t")
+                    self._net_B = np.genfromtxt(f'{pcNet_path}/net_B.csv', delimiter="\t")
+                except ImportError:
+                    print('require a path to the directory where files net_A.csv and net_B.csv in with tab as delimiter')
+            else:
+                self._net_A = pcNet(ada_A.X, nComp=5, symmetric=True)
+                self._net_B = pcNet(ada_B.X, nComp=5, symmetric=True)
+            self._w = self.build_w(queryDB = mode, scale = True)
              
         del ada_A, ada_B
+
+    def __str__(self):
+        return f'Xct object on the interaction between {self._CellA} and {self._CellB}'
                
     def fill_metric(self, ref_obj = None, verbose = False):
         if ref_obj is None:
@@ -262,6 +274,10 @@ class Xct(Xct_metrics):
             print('Selected {} LR pairs'.format(df.shape[0]))
 
         return df
+
+    def _candidates(self, df_filtered):
+        candidates = [a+'_'+b for a, b in zip(np.asarray(df_filtered['ligand'],dtype=str), np.asarray(df_filtered['receptor'],dtype=str))]
+        return candidates
     
     
     def score(self, ref_DB = None, method = 0, a = 1):
@@ -297,7 +313,9 @@ class Xct(Xct_metrics):
         #print(metric_A_temp.shape, metric_B_temp.shape)
         w12 = metric_A_temp@metric_B_temp
         
-        if queryDB is not None: 
+        if queryDB is None:
+            pass
+        else:
             if queryDB == 'combinators':
                 # ada.var index of LR genes (the intersect of DB and object genes, no pair relationship maintained)
                 LR_idx_toUse = self._genes_index_DB
@@ -342,13 +360,28 @@ class Xct(Xct_metrics):
         
         return projections, losses
 
-    def pair_distance(self, ma): #ma: manifold alignment, ndarray
+    def pair_distance(self, projections): #projections: manifold alignment, ndarray
         d = {}
         for i, l in enumerate(self.genes_A):
             for j, r in enumerate(self.genes_B):
-                d[f'{l}_{r}'] = [(i, j), np.linalg.norm(ma[i, :] - ma[len(self.genes_A) + j, :])]
+                d[f'{l}_{r}'] = [(i, j), np.linalg.norm(projections[i, :] - projections[len(self.genes_A) + j, :])]
         
-        return d     
+        return d    
+
+    def nn_output(self, projections):
+        #manifold alignment pair distances
+        result_nn = self.pair_distance(projections) #dict
+        #print('manifold aligned pairs:', len(result_nn))
+
+        #output df
+        df_nn = pd.DataFrame.from_dict(result_nn, orient='index', columns=['idx', 'dist']).sort_values(by=['dist'])
+        df_nn['rank'] = np.arange(len(df_nn))
+
+        w12 = self._w[:self._net_A.shape[0], self._net_A.shape[1]:]
+
+        correspondence_score = [w12[idx] for idx in np.asarray(df_nn['idx'])]
+        df_nn['correspondence_score'] = correspondence_score
+        return df_nn 
       
 def scores(adata, ref_obj, method = 0, a = 1, n = 100):
     result = []
