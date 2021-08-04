@@ -9,6 +9,17 @@ import warnings
 warnings.filterwarnings("ignore")
 sc.settings.verbosity = 0
 
+try:
+    from sys import path as syspath
+    from os import path as ospath
+    syspath.append(ospath.join(ospath.expanduser("~"), './'))
+    
+    from pcNet import pcNet
+    import dNN 
+
+except ImportError:
+    print('Module not found')
+
 #require adata with layer 'raw' (counts) and 'log1p' (normalized), cell labels in obs 'idents'
 
 class Xct_metrics():
@@ -171,13 +182,15 @@ class Xct_metrics():
       
 class Xct(Xct_metrics):
 
-    def __init__(self, adata, CellA, CellB, pmt = False):
+    def __init__(self, adata, CellA, CellB, pmt = False, RUNpcNet = False):
         Xct_metrics.__init__(self, adata)
         self._CellA = CellA
         self._CellB = CellB
         self._metric_names = ['mean', 'var', 'disp', 'cv', 'cv_res']
         ada_A = adata[adata.obs['ident'] == CellA, :].copy()
         ada_B = adata[adata.obs['ident'] == CellB, :].copy()
+        self.genes_A = list(ada_A.var_names.astype(str))
+        self.genes_B = list(ada_B.var_names.astype(str))
         
         self._metric_A = np.vstack([self.get_metric(ada_A), self.chen2016_fit(ada_A)]) #len 5
         self._metric_B = np.vstack([self.get_metric(ada_B), self.chen2016_fit(ada_B)])
@@ -185,7 +198,14 @@ class Xct(Xct_metrics):
         if not pmt:
             self.ref = self.fill_metric()
             self.genes_index = self.get_index(DB = self.ref)
-       
+
+        if RUNpcNet:
+            self._AX = ada_A.X
+            self._BX = ada_B.X
+            self._net_A = pcNet(ada_A.X, nComp=5, symmetric=True)
+            self._net_B = pcNet(ada_B.X, nComp=5, symmetric=True)
+            self._w = self.build_w(queryDB = True, scale = True)
+             
         del ada_A, ada_B
                
     def fill_metric(self, ref_obj = None, verbose = False):
@@ -269,7 +289,59 @@ class Xct(Xct_metrics):
             S = ref_DB['cv_res_L'] + a*ref_DB['cv_res_R']
 
         return S #.astype(float)
-      
+
+    def build_w(self, queryDB = True, scale = True):
+        # u^2 + var
+        metric_A_temp = (np.square(self._metric_A[0]) + self._metric_A[1])[:, None] 
+        metric_B_temp = (np.square(self._metric_B[0]) + self._metric_B[1])[None, :] 
+        #print(metric_A_temp.shape, metric_B_temp.shape)
+        w12 = metric_A_temp@metric_B_temp
+        
+        if queryDB:
+            # ada.var index of LR genes (the intersect of DB and object genes, no pair relationship maintained)
+            lig_idx = np.ravel(np.asarray(self._genes_index_DB[:, 0]))
+            lig_idx = list(np.unique(lig_idx[lig_idx != 0]) - 1)
+            rec_idx = np.ravel(np.asarray(self._genes_index_DB[:, 1]))
+            rec_idx = list(np.unique(rec_idx[rec_idx != 0]) - 1)
+
+            # reverse select and zeros LR that not in idx list
+            mask_lig = np.ones(w12.shape[0], dtype=np.bool)
+            mask_lig[lig_idx] = 0
+            mask_rec = np.ones(w12.shape[1], dtype=np.bool)
+            mask_rec[rec_idx] = 0
+            w12[mask_lig, :] = 0
+            w12[:, mask_rec] = 0 
+
+        if scale:
+            mu = 1
+            w12 = mu * ((self._net_A+1).sum() + (self._net_B+1).sum()) / (2 * w12.sum()) * w12
+
+        w = np.block([[self._net_A + 1, w12],
+            [w12.T, self._net_B + 1]])
+        #print('w shape:', w.shape)
+
+        return w
+
+    def nn_projection(self, d = 2, n = 3000, lr = 0.001, plot_loss = False):
+        x1_np = scipy.sparse.csr_matrix.toarray(self._AX.T) #gene by cell
+        x2_np = scipy.sparse.csr_matrix.toarray(self._BX.T)
+        
+        projections, losses = dNN.train_and_project(x1_np, x2_np, d=d, w=self._w, n=n, lr=lr)
+        if plot_loss:
+            plt.figure(figsize=(6, 5), dpi=80)
+            plt.plot(np.arange(len(losses))*100, losses)
+            #plt.savefig('fig.png', dpi=80)
+            plt.show()
+        
+        return projections, losses
+
+    def pair_distance(self, ma): #ma: manifold alignment, ndarray
+        d = {}
+        for i, l in enumerate(self.genes_A):
+            for j, r in enumerate(self.genes_B):
+                d[f'{l}_{r}'] = [(i, j), np.linalg.norm(ma[i, :] - ma[len(self.genes_A) + j, :])]
+        
+        return d     
       
 def scores(adata, ref_obj, method = 0, a = 1, n = 100):
     result = []

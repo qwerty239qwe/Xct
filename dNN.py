@@ -75,8 +75,9 @@ def train_and_project(x1_np, x2_np, w, d = 2, n=3000, lr=0.01, layers=None):
         
         # Compute and print loss
         loss = torch.trace(proj_outputs.t()@L@proj_outputs)
-        print(t, loss.item())
+        
         if t%100 == 0:
+            print(t, loss.item())
             losses.append(loss.item())
 
         # Zero gradients, perform a backward pass, and update the weights.
