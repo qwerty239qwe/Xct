@@ -290,20 +290,26 @@ class Xct(Xct_metrics):
 
         return S #.astype(float)
 
-    def build_w(self, queryDB = True, scale = True):
+    def build_w(self, queryDB = None, scale = True): #3 modes, None will use all the corresponding scores
         # u^2 + var
         metric_A_temp = (np.square(self._metric_A[0]) + self._metric_A[1])[:, None] 
         metric_B_temp = (np.square(self._metric_B[0]) + self._metric_B[1])[None, :] 
         #print(metric_A_temp.shape, metric_B_temp.shape)
         w12 = metric_A_temp@metric_B_temp
         
-        if queryDB:
-            # ada.var index of LR genes (the intersect of DB and object genes, no pair relationship maintained)
-            lig_idx = np.ravel(np.asarray(self._genes_index_DB[:, 0]))
-            lig_idx = list(np.unique(lig_idx[lig_idx != 0]) - 1)
-            rec_idx = np.ravel(np.asarray(self._genes_index_DB[:, 1]))
-            rec_idx = list(np.unique(rec_idx[rec_idx != 0]) - 1)
+        if queryDB is not None: 
+            if queryDB == 'combinators':
+                # ada.var index of LR genes (the intersect of DB and object genes, no pair relationship maintained)
+                LR_idx_toUse = self._genes_index_DB
 
+            if queryDB == 'pairs':
+                # maintain L-R pair relationship, both > 0
+                LR_idx_toUse = self._genes_index_DB[(self._genes_index_DB[:, 0] > 0) & (self._genes_index_DB[:, 1] > 0)]
+
+            lig_idx = np.ravel(np.asarray(LR_idx_toUse[:, 0]))
+            lig_idx = list(np.unique(lig_idx[lig_idx != 0]) - 1)
+            rec_idx = np.ravel(np.asarray(LR_idx_toUse[:, 1]))
+            rec_idx = list(np.unique(rec_idx[rec_idx != 0]) - 1)
             # reverse select and zeros LR that not in idx list
             mask_lig = np.ones(w12.shape[0], dtype=np.bool)
             mask_lig[lig_idx] = 0
@@ -311,13 +317,14 @@ class Xct(Xct_metrics):
             mask_rec[rec_idx] = 0
             w12[mask_lig, :] = 0
             w12[:, mask_rec] = 0 
+            assert np.count_nonzero(w12) == len(lig_idx)*len(rec_idx)
 
         if scale:
             mu = 1
             w12 = mu * ((self._net_A+1).sum() + (self._net_B+1).sum()) / (2 * w12.sum()) * w12
 
-        w = np.block([[self._net_A + 1, w12],
-            [w12.T, self._net_B + 1]])
+        w = np.block([[self._net_A+1, w12],
+            [w12.T, self._net_B+1]])
         #print('w shape:', w.shape)
 
         return w

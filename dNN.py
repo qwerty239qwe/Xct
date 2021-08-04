@@ -76,7 +76,7 @@ def train_and_project(x1_np, x2_np, w, d = 2, n=3000, lr=0.01, layers=None):
         # Compute and print loss
         loss = torch.trace(proj_outputs.t()@L@proj_outputs)
         
-        if t%100 == 0:
+        if t == 0 or t%100 == 99:
             print(t, loss.item())
             losses.append(loss.item())
 
