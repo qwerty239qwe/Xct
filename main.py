@@ -34,6 +34,7 @@ class Xct_metrics():
 
     
     def Xct_DB(self, specis = 'Human'):
+        '''load omnipath DB for L-R pairs'''
         if specis == 'Mouse':
             pass
         elif specis == 'Human':
@@ -47,6 +48,7 @@ class Xct_metrics():
         return LR_toUse
     
     def subset(self):
+        '''subset adata var with only DB L and R'''
         genes = np.ravel(self.DB.values) 
         genes = np.unique(genes[genes != None])
         genes_use = self.genes.intersection(genes)
@@ -54,6 +56,7 @@ class Xct_metrics():
         return [list(self.genes).index(g) for g in genes_use]    #index in orig adata
     
     def get_index(self, DB):
+        '''original index of DB L-R pairs in adata'''
         g_LRs = DB.iloc[:, :2].values #L-R
         gene_list = [None] + list(self.genes) 
 
@@ -71,6 +74,7 @@ class Xct_metrics():
 
 
     def get_metric(self, adata, verbose = False): #require normalized data
+        '''compute metrics for each gene'''
         data_norm = scipy.sparse.csr_matrix.toarray(adata.X) if scipy.sparse.issparse(adata.X) else adata.X
         if verbose:
             print('(cell, feature):', data_norm.shape)
@@ -87,6 +91,7 @@ class Xct_metrics():
             raise ValueError("require log data")
     
     def chen2016_fit(self, adata, plot = False, verbose = False): #require raw data 
+        '''NB model fit mean vs CV'''
         data_raw = adata.layers['raw'] #.copy()
         if (data_raw % 1 != 0).any():
             raise ValueError("require counts (int) data")
@@ -176,7 +181,6 @@ class Xct_metrics():
             plt.legend(loc='lower left')
             plt.show()
         
-        #obs_cv = self.cv.copy()
         diff = cv_diff(cv_raw, ydataFit)
         return diff #log CV difference
       
@@ -186,13 +190,12 @@ class Xct(Xct_metrics):
 
     def __init__(self, adata, CellA, CellB, pmt = False, build_GRN = False, mode = None, pcNet_path = None): #mode: None, 'combinators', 'pairs'; pcNet_path: path to dir of two pcNet
         Xct_metrics.__init__(self, adata)
-        self._CellA = CellA
-        self._CellB = CellB
+        self._cell_names = CellA, CellB
         self._metric_names = ['mean', 'var', 'disp', 'cv', 'cv_res']
         ada_A = adata[adata.obs['ident'] == CellA, :].copy()
         ada_B = adata[adata.obs['ident'] == CellB, :].copy()
-        self.genes_A = list(ada_A.var_names.astype(str))
-        self.genes_B = list(ada_B.var_names.astype(str))
+        self._cell_numbers = ada_A.shape[0], ada_B.shape[0]
+        self.genes_names = list(ada_A.var_names.astype(str)), list(ada_B.var_names.astype(str))
         
         self._metric_A = np.vstack([self.get_metric(ada_A), self.chen2016_fit(ada_A)]) #len 5
         self._metric_B = np.vstack([self.get_metric(ada_B), self.chen2016_fit(ada_B)])
@@ -200,10 +203,8 @@ class Xct(Xct_metrics):
         if not pmt:
             self.ref = self.fill_metric()
             self.genes_index = self.get_index(DB = self.ref)
-
         if build_GRN:
-            self._AX = ada_A.X # input array for nn projection
-            self._BX = ada_B.X
+            self._X = ada_A.X, ada_B.X # input array for nn projection
             if pcNet_path is not None:
                 try:
                     self._net_A = np.genfromtxt(f'{pcNet_path}/net_A.csv', delimiter="\t")
@@ -213,14 +214,16 @@ class Xct(Xct_metrics):
             else:
                 self._net_A = pcNet(ada_A.X, nComp=5, symmetric=True)
                 self._net_B = pcNet(ada_B.X, nComp=5, symmetric=True)
-            self._w = self.build_w(queryDB = mode, scale = True)
-             
+                np.savetxt("data/net_A.csv", self._net_A, delimiter="\t")
+                np.savetxt("data/net_B.csv", self._net_B, delimiter="\t")
+            self._w = self.build_w(queryDB = mode, scale = True)       
         del ada_A, ada_B
 
     def __str__(self):
-        return f'Xct object on the interaction between {self._CellA} and {self._CellB}'
+        return f'Xct object with the interaction {self._cell_names[0]} X {self._cell_names[1]} = {self._cell_numbers[0]} X {self._cell_numbers[1]}'
                
     def fill_metric(self, ref_obj = None, verbose = False):
+        '''fill the corresponding metrics for genes of selected pairs (L-R candidates)'''
         if ref_obj is None:
             genes_index = self._genes_index_DB
         else:
@@ -276,11 +279,13 @@ class Xct(Xct_metrics):
         return df
 
     def _candidates(self, df_filtered):
+        '''selected L-R candidates'''
         candidates = [a+'_'+b for a, b in zip(np.asarray(df_filtered['ligand'],dtype=str), np.asarray(df_filtered['receptor'],dtype=str))]
         return candidates
     
     
     def score(self, ref_DB = None, method = 0, a = 1):
+        '''L-R score'''
         if ref_DB is None:
             ref_DB = self.ref.copy()
         S0 = ref_DB['mean_L'] * ref_DB['mean_R'] 
@@ -306,7 +311,8 @@ class Xct(Xct_metrics):
 
         return S #.astype(float)
 
-    def build_w(self, queryDB = None, scale = True): #3 modes, None will use all the corresponding scores
+    def build_w(self, queryDB = None, scale = True): 
+        '''build w: 3 modes, None will use all the corresponding scores'''
         # u^2 + var
         metric_A_temp = (np.square(self._metric_A[0]) + self._metric_A[1])[:, None] 
         metric_B_temp = (np.square(self._metric_B[0]) + self._metric_B[1])[None, :] 
@@ -348,8 +354,9 @@ class Xct(Xct_metrics):
         return w
 
     def nn_projection(self, d = 2, n = 3000, lr = 0.001, plot_loss = False):
-        x1_np = scipy.sparse.csr_matrix.toarray(self._AX.T) #gene by cell
-        x2_np = scipy.sparse.csr_matrix.toarray(self._BX.T)
+        '''manifold alignment by neural network'''
+        x1_np = scipy.sparse.csr_matrix.toarray(self._X[0].T) #gene by cell
+        x2_np = scipy.sparse.csr_matrix.toarray(self._X[1].T)
         
         projections, losses = dNN.train_and_project(x1_np, x2_np, d=d, w=self._w, n=n, lr=lr)
         if plot_loss:
@@ -360,17 +367,19 @@ class Xct(Xct_metrics):
         
         return projections, losses
 
-    def pair_distance(self, projections): #projections: manifold alignment, ndarray
+    def _pair_distance(self, projections): #projections: manifold alignment, ndarray
+        '''distances of each pair in latent space'''
         d = {}
-        for i, l in enumerate(self.genes_A):
-            for j, r in enumerate(self.genes_B):
-                d[f'{l}_{r}'] = [(i, j), np.linalg.norm(projections[i, :] - projections[len(self.genes_A) + j, :])]
+        for i, l in enumerate(self.genes_names[0]):
+            for j, r in enumerate(self.genes_names[1]):
+                d[f'{l}_{r}'] = [(i, j), np.linalg.norm(projections[i, :] - projections[len(self.genes_names[0]) + j, :])]
         
         return d    
 
     def nn_output(self, projections):
+        '''output info of each pair'''
         #manifold alignment pair distances
-        result_nn = self.pair_distance(projections) #dict
+        result_nn = self._pair_distance(projections) #dict
         #print('manifold aligned pairs:', len(result_nn))
 
         #output df
@@ -384,6 +393,7 @@ class Xct(Xct_metrics):
         return df_nn 
       
 def scores(adata, ref_obj, method = 0, a = 1, n = 100):
+    '''cell labels permutation'''
     result = []
     temp = adata.copy()
     
@@ -399,6 +409,7 @@ def scores(adata, ref_obj, method = 0, a = 1, n = 100):
   
   
 def pmt_test(orig_score, scores, p = 0.05):
+    '''significant result for permutation test'''
     enriched_i, pvals, counts = ([] for _ in range(3))
     for i, dist in enumerate(scores):
         count = sum(orig_score[i] > value for value in dist)
@@ -412,8 +423,9 @@ def pmt_test(orig_score, scores, p = 0.05):
     return enriched_i, pvals, counts
   
   
-#test
-#s1 = Xct(ada, 'Inflam. FIB', 'Inflam. DC')
-#df1 = s1.fill_metric()
+if __name__ == '__main__':
+    ada = sc.datasets.pbmc68k_reduced() #724 cells and 221 highly variable genes
+    obj = Xct(ada, 'CD14+ Monocyte', 'Dendritic', build_GRN = False)
+    print(obj)
 
 
