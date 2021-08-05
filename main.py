@@ -2,7 +2,6 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import scanpy as sc
-#from anndata import AnnData
 import scipy
 from scipy.optimize import least_squares
 import warnings
@@ -16,7 +15,6 @@ try:
     
     from pcNet import pcNet
     import dNN 
-
 except ImportError:
     print('Module not found')
 
@@ -56,7 +54,7 @@ class Xct_metrics():
         return [list(self.genes).index(g) for g in genes_use]    #index in orig adata
     
     def get_index(self, DB):
-        '''original index of DB L-R pairs in adata'''
+        '''original index of DB L-R pairs in adata var'''
         g_LRs = DB.iloc[:, :2].values #L-R
         gene_list = [None] + list(self.genes) 
 
@@ -188,7 +186,10 @@ class Xct_metrics():
       
 class Xct(Xct_metrics):
 
-    def __init__(self, adata, CellA, CellB, pmt = False, build_GRN = False, mode = None, pcNet_path = None): #mode: None, 'combinators', 'pairs'; pcNet_path: path to dir of two pcNet
+    def __init__(self, adata, CellA, CellB, pmt = False, build_GRN = False, save_GRN = False, mode = None, pcNet_path = None): 
+        '''3 modes to construct correspondence: None, 'combinators', 'pairs'
+            save_GRN: save constructed 2 pcNet
+            pcNet_path: path to dir of two pcNet'''
         Xct_metrics.__init__(self, adata)
         self._cell_names = CellA, CellB
         self._metric_names = ['mean', 'var', 'disp', 'cv', 'cv_res']
@@ -213,18 +214,20 @@ class Xct(Xct_metrics):
                 try:
                     self._net_A = np.genfromtxt(f'{pcNet_path}/net_A.csv', delimiter="\t")
                     self._net_B = np.genfromtxt(f'{pcNet_path}/net_B.csv', delimiter="\t")
+                    print('pcNet loaded')
                 except ImportError:
                     print('require a path to the directory where files net_A.csv and net_B.csv in with tab as delimiter')
             else:
                 self._net_A = pcNet(ada_A.X, nComp=5, symmetric=True)
                 self._net_B = pcNet(ada_B.X, nComp=5, symmetric=True)
-                np.savetxt("data/net_A.csv", self._net_A, delimiter="\t")
-                np.savetxt("data/net_B.csv", self._net_B, delimiter="\t")
+                if save_GRN:
+                    np.savetxt("data/net_A.csv", self._net_A, delimiter="\t")
+                    np.savetxt("data/net_B.csv", self._net_B, delimiter="\t")
             self._w = self.build_w(queryDB = mode, scale = True)       
         del ada_A, ada_B
 
     def __str__(self):
-        info = f'Xct object with the interaction {self._cell_names[0]} X {self._cell_names[1]} = {self._cell_numbers[0]} X {self._cell_numbers[1]}'
+        info = f'Xct object with the interaction between cells {self._cell_names[0]} X {self._cell_names[1]} = {self._cell_numbers[0]} X {self._cell_numbers[1]}'
         if '_w' in dir(self):
             return info + f'\n# of genes = {len(self.genes_names[0])} X {len(self.genes_names[1])} \nCorrespondence has been built = {self._w.shape[0]} X {self._w.shape[1]}'
         else:
@@ -313,7 +316,6 @@ class Xct(Xct_metrics):
             ref_DB['cv_res_L'][ref_DB['cv_res_L'] < 0] = 0
             S = abs(ref_DB['cv_res_L'] * ref_DB['cv_res_R'])
             S = S/(0.5+S) + a*S0
-
         if method == 5:
             S = ref_DB['cv_res_L'] + a*ref_DB['cv_res_R']
 
@@ -408,8 +410,7 @@ def scores(adata, ref_obj, method = 0, a = 1, n = 100):
     for _ in range(n):
         labels_pmt = np.random.permutation(temp.obs['ident']) #pmt gloablly
         temp.obs['ident'] = labels_pmt
-        #ada_pmt = pmt(adata)
-        pmt_obj = Xct(temp, ref_obj._CellA, ref_obj._CellB, pmt =True)
+        pmt_obj = Xct(temp, ref_obj._cell_names[0], ref_obj._cell_names[1], pmt =True)
         df_pmt = pmt_obj.fill_metric(ref_obj = ref_obj)
         result.append(pmt_obj.score(ref_DB = df_pmt, method = method, a = a))
     
@@ -433,10 +434,10 @@ def pmt_test(orig_score, scores, p = 0.05):
   
 if __name__ == '__main__':
     ada = sc.datasets.paul15()[:, :100] # raw counts
+    ada.obs = ada.obs.rename(columns={'paul15_clusters': 'ident'})
     ada.layers['raw'] = np.asarray(ada.X, dtype=int)
     sc.pp.log1p(ada)
     ada.layers['log1p'] = ada.X.copy()
-    ada.obs['ident'] = ada.obs['paul15_clusters']
 
     obj = Xct(ada, '14Mo', '15Mo', build_GRN = True, mode = None)
     print(obj)
