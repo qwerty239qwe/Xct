@@ -20,11 +20,11 @@ try:
 except ImportError:
     print('Module not found')
 
-#require adata with layer 'raw' (counts) and 'log1p' (normalized), cell labels in obs 'idents'
 
 class Xct_metrics():
+    '''require adata with layer 'raw' (counts) and 'log1p' (normalized), cell labels in obs 'ident' '''
     __slots__ = ('genes', 'DB', '_genes_index_DB')
-    def __init__(self, adata, specis = 'Human'): #adata: cellA * allgenes
+    def __init__(self, adata, specis = 'Human'): 
         if not ('raw' and 'log1p' in adata.layers.keys()):
             raise NameError('require adata with count and normalized layers named \'raw\' and \'log1p\'')
         else:
@@ -192,8 +192,12 @@ class Xct(Xct_metrics):
         Xct_metrics.__init__(self, adata)
         self._cell_names = CellA, CellB
         self._metric_names = ['mean', 'var', 'disp', 'cv', 'cv_res']
-        ada_A = adata[adata.obs['ident'] == CellA, :].copy()
-        ada_B = adata[adata.obs['ident'] == CellB, :].copy()
+
+        if not ('ident' in adata.obs.keys()):
+            raise NameError('require adata with cell labels saved in \'ident\'')
+        else:
+            ada_A = adata[adata.obs['ident'] == CellA, :].copy()
+            ada_B = adata[adata.obs['ident'] == CellB, :].copy()
         self._cell_numbers = ada_A.shape[0], ada_B.shape[0]
         self.genes_names = list(ada_A.var_names.astype(str)), list(ada_B.var_names.astype(str))
         
@@ -220,7 +224,11 @@ class Xct(Xct_metrics):
         del ada_A, ada_B
 
     def __str__(self):
-        return f'Xct object with the interaction {self._cell_names[0]} X {self._cell_names[1]} = {self._cell_numbers[0]} X {self._cell_numbers[1]}'
+        info = f'Xct object with the interaction {self._cell_names[0]} X {self._cell_names[1]} = {self._cell_numbers[0]} X {self._cell_numbers[1]}'
+        if '_w' in dir(self):
+            return info + f'\n# of genes = {len(self.genes_names[0])} X {len(self.genes_names[1])} \nCorrespondence has been built = {self._w.shape[0]} X {self._w.shape[1]}'
+        else:
+            return info
                
     def fill_metric(self, ref_obj = None, verbose = False):
         '''fill the corresponding metrics for genes of selected pairs (L-R candidates)'''
@@ -355,8 +363,8 @@ class Xct(Xct_metrics):
 
     def nn_projection(self, d = 2, n = 3000, lr = 0.001, plot_loss = False):
         '''manifold alignment by neural network'''
-        x1_np = scipy.sparse.csr_matrix.toarray(self._X[0].T) #gene by cell
-        x2_np = scipy.sparse.csr_matrix.toarray(self._X[1].T)
+        x1_np = scipy.sparse.csr_matrix.toarray(self._X[0].T) if scipy.sparse.issparse(self._X[0]) else self._X[0].T #gene by cell
+        x2_np = scipy.sparse.csr_matrix.toarray(self._X[1].T) if scipy.sparse.issparse(self._X[1]) else self._X[1].T
         
         projections, losses = dNN.train_and_project(x1_np, x2_np, d=d, w=self._w, n=n, lr=lr)
         if plot_loss:
@@ -424,8 +432,16 @@ def pmt_test(orig_score, scores, p = 0.05):
   
   
 if __name__ == '__main__':
-    ada = sc.datasets.pbmc68k_reduced() #724 cells and 221 highly variable genes
-    obj = Xct(ada, 'CD14+ Monocyte', 'Dendritic', build_GRN = False)
+    ada = sc.datasets.paul15()[:, :100] # raw counts
+    ada.layers['raw'] = np.asarray(ada.X, dtype=int)
+    sc.pp.log1p(ada)
+    ada.layers['log1p'] = ada.X.copy()
+    ada.obs['ident'] = ada.obs['paul15_clusters']
+
+    obj = Xct(ada, '14Mo', '15Mo', build_GRN = True, mode = None)
     print(obj)
+    projections, losses = obj.nn_projection(n = 500, plot_loss = False)
+    df_nn = obj.nn_output(projections)
+    print(df_nn.head())
 
 
