@@ -186,10 +186,12 @@ class Xct_metrics():
       
 class Xct(Xct_metrics):
 
-    def __init__(self, adata, CellA, CellB, pmt = False, build_GRN = False, save_GRN = False, mode = None, pcNet_path = None): 
-        '''3 modes to construct correspondence: None, 'combinators', 'pairs'
-            save_GRN: save constructed 2 pcNet
-            pcNet_path: path to dir of two pcNet'''
+    def __init__(self, adata, CellA, CellB, pmt = False, build_GRN = False, save_GRN = False, pcNet_name = 'pcNet', mode = None): 
+        '''build_GRN: if True to build GRN thru pcNet, if False to load built GRN files;
+            save_GRN: save constructed 2 pcNet;
+            pcNet_name: name of GRN (.csv) files, read/write;
+            3 modes to construct correspondence: None, 'combinators', 'pairs'
+            '''
         Xct_metrics.__init__(self, adata)
         self._cell_names = CellA, CellB
         self._metric_names = ['mean', 'var', 'disp', 'cv', 'cv_res']
@@ -210,20 +212,20 @@ class Xct(Xct_metrics):
             self.genes_index = self.get_index(DB = self.ref)
         if build_GRN:
             self._X = ada_A.X, ada_B.X # input array for nn projection
-            if pcNet_path is not None:
-                try:
-                    self._net_A = np.genfromtxt(f'{pcNet_path}/net_A.csv', delimiter="\t")
-                    self._net_B = np.genfromtxt(f'{pcNet_path}/net_B.csv', delimiter="\t")
-                    print('pcNet loaded')
-                except ImportError:
-                    print('require a path to the directory where files net_A.csv and net_B.csv in with tab as delimiter')
-            else:
-                self._net_A = pcNet(ada_A.X, nComp=5, symmetric=True)
-                self._net_B = pcNet(ada_B.X, nComp=5, symmetric=True)
-                if save_GRN:
-                    np.savetxt("data/net_A.csv", self._net_A, delimiter="\t")
-                    np.savetxt("data/net_B.csv", self._net_B, delimiter="\t")
-            self._w = self.build_w(queryDB = mode, scale = True)       
+            self._net_A = pcNet(ada_A.X, nComp=5, symmetric=True)
+            self._net_B = pcNet(ada_B.X, nComp=5, symmetric=True)
+            if save_GRN:
+                np.savetxt(f'data/{pcNet_name}_A.csv', self._net_A, delimiter="\t")
+                np.savetxt(f'data/{pcNet_name}_B.csv', self._net_B, delimiter="\t")
+        else:
+            try:
+                self._net_A = np.genfromtxt(f'data/{pcNet_name}_A.csv', delimiter="\t")
+                self._net_B = np.genfromtxt(f'data/{pcNet_name}_B.csv', delimiter="\t")
+                print('pcNets loaded')
+            except ImportError:
+                print('require pcNet_name where csv files saved in with tab as delimiter')
+
+        self._w = self.build_w(queryDB = mode, scale = True)       
         del ada_A, ada_B
 
     def __str__(self):
@@ -439,8 +441,11 @@ if __name__ == '__main__':
     sc.pp.log1p(ada)
     ada.layers['log1p'] = ada.X.copy()
 
-    obj = Xct(ada, '14Mo', '15Mo', build_GRN = True, mode = None)
+    obj = Xct(ada, '14Mo', '15Mo', build_GRN = True, save_GRN = True, pcNet_name = 'Net_for_Test', mode = None)
+    print('building Xct object...')
     print(obj)
+    obj_load = Xct(ada, '14Mo', '15Mo', build_GRN = False, pcNet_name = 'Net_for_Test', mode = None)
+    print('Testing loading...')
     projections, losses = obj.nn_projection(n = 500, plot_loss = False)
     df_nn = obj.nn_output(projections)
     print(df_nn.head())

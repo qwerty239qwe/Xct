@@ -1,4 +1,6 @@
 __pycache__
+data/.ipynb_checkpoints
+data/hca_heart_immune.h5ad
 data/heart_immune.h5ad
 data/net_A.csv
 data/net_B.csv
