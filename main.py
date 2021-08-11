@@ -186,7 +186,7 @@ class Xct_metrics():
       
 class Xct(Xct_metrics):
 
-    def __init__(self, adata, CellA, CellB, pmt = False, build_GRN = False, save_GRN = False, pcNet_name = 'pcNet', mode = None): 
+    def __init__(self, adata, CellA, CellB, pmt = False, build_GRN = False, save_GRN = False, pcNet_name = 'pcNet', mode = None, verbose = False): 
         '''build_GRN: if True to build GRN thru pcNet, if False to load built GRN files;
             save_GRN: save constructed 2 pcNet;
             pcNet_name: name of GRN (.csv) files, read/write;
@@ -203,6 +203,9 @@ class Xct(Xct_metrics):
             ada_B = adata[adata.obs['ident'] == CellB, :].copy()
         self._cell_numbers = ada_A.shape[0], ada_B.shape[0]
         self.genes_names = list(ada_A.var_names.astype(str)), list(ada_B.var_names.astype(str))
+        self._X = ada_A.X, ada_B.X # input array for nn projection
+        if verbose:
+            print(f'for interactions from {self._cell_names[0]} to {self._cell_names[1]} = {self._cell_numbers[0]} to {self._cell_numbers[1]}...')
         
         self._metric_A = np.vstack([self.get_metric(ada_A), self.chen2016_fit(ada_A)]) #len 5
         self._metric_B = np.vstack([self.get_metric(ada_B), self.chen2016_fit(ada_B)])
@@ -210,10 +213,15 @@ class Xct(Xct_metrics):
         if not pmt:
             self.ref = self.fill_metric()
             self.genes_index = self.get_index(DB = self.ref)
-        if build_GRN:
-            self._X = ada_A.X, ada_B.X # input array for nn projection
+        if build_GRN: 
+            if verbose:
+                print('building GRN...')
             self._net_A = pcNet(ada_A.X, nComp=5, symmetric=True)
+            if verbose:
+                print('GRN of Cell A has been built, start building GRN of Cell B...')
             self._net_B = pcNet(ada_B.X, nComp=5, symmetric=True)
+            if verbose:
+                print('GRN of Cell B has been built, building correspondence..')
             if save_GRN:
                 np.savetxt(f'data/{pcNet_name}_A.csv', self._net_A, delimiter="\t")
                 np.savetxt(f'data/{pcNet_name}_B.csv', self._net_B, delimiter="\t")
@@ -221,11 +229,13 @@ class Xct(Xct_metrics):
             try:
                 self._net_A = np.genfromtxt(f'data/{pcNet_name}_A.csv', delimiter="\t")
                 self._net_B = np.genfromtxt(f'data/{pcNet_name}_B.csv', delimiter="\t")
-                print('pcNets loaded')
+                print('GRNs loaded...')
             except ImportError:
                 print('require pcNet_name where csv files saved in with tab as delimiter')
 
-        self._w = self.build_w(queryDB = mode, scale = True)       
+        self._w = self.build_w(queryDB = mode, scale = True) 
+        if verbose:
+            print('correspondence has been built...')      
         del ada_A, ada_B
 
     def __str__(self):
@@ -324,7 +334,7 @@ class Xct(Xct_metrics):
         return S #.astype(float)
 
     def build_w(self, queryDB = None, scale = True): 
-        '''build w: 3 modes, None will use all the corresponding scores'''
+        '''build w: 3 modes, if None will use all the corresponding scores'''
         # u^2 + var
         metric_A_temp = (np.square(self._metric_A[0]) + self._metric_A[1])[:, None] 
         metric_B_temp = (np.square(self._metric_B[0]) + self._metric_B[1])[None, :] 
@@ -403,6 +413,25 @@ class Xct(Xct_metrics):
         correspondence_score = [w12[idx] for idx in np.asarray(df_nn['idx'])]
         df_nn['correspondence_score'] = correspondence_score
         return df_nn 
+
+    def chi2_test(self, df_nn, pval = 0.05, FDR = False):
+        '''chi-sqaure left tail test to have enriched pairs'''
+        if ('dist' and 'rank') in df_nn.columns:
+            dist2 = np.square(np.asarray(df_nn['dist']))
+            dist_mean = np.mean(dist2)
+            FC = dist2 / dist_mean
+            p = scipy.stats.chi2.cdf(FC, df = 1) #left tail CDF    
+            if FDR:
+                from statsmodels.stats.multitest import multipletests
+                rej, p, _, _ = multipletests(pvals = p, alpha = pval, method = 'fdr_bh')
+                
+            df_nn['p_val'] = p
+            df_enriched = df_nn[df_nn['p_val'] < pval].sort_values(by=['rank'])
+            print(f'\nTotal enriched: {len(df_enriched)} / {len(df_nn)}')
+    
+            return df_enriched
+        else:
+            raise NameError('require a resulted dataframe with column \'dist\' and \'rank\'')
       
 def scores(adata, ref_obj, method = 0, a = 1, n = 100):
     '''cell labels permutation'''
@@ -448,6 +477,7 @@ if __name__ == '__main__':
     print('Testing loading...')
     projections, losses = obj.nn_projection(n = 500, plot_loss = False)
     df_nn = obj.nn_output(projections)
-    print(df_nn.head())
+    df_enriched = obj.chi2_test(df_nn)
+    print(df_enriched.head())
 
 
