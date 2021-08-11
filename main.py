@@ -278,11 +278,9 @@ class Xct(Xct_metrics):
 
             filled = np.concatenate((filled_L[:, None], filled_R[:, None]), axis=1)
             result = pd.DataFrame(data = filled, columns = [f'{metric}_L', f'{metric}_R'])
-            df = pd.concat([df, result], axis=1)
-        
+            df = pd.concat([df, result], axis=1)   
         #DB = skin.DB.reset_index(drop = True, inplace = False) 
-        
-        
+           
         if ref_obj is None:
             df = pd.concat([self.DB, df], axis=1) # concat 1:1 since sharing same index
             mask1 = (df['mean_L'] > 0) & (df['mean_R'] > 0) # filter 0 for first LR
@@ -414,9 +412,11 @@ class Xct(Xct_metrics):
         df_nn['correspondence_score'] = correspondence_score
         return df_nn 
 
-    def chi2_test(self, df_nn, pval = 0.05, FDR = False):
+    def chi2_test(self, df_nn, candidates = None, pval = 0.05, FDR = False):
         '''chi-sqaure left tail test to have enriched pairs'''
         if ('dist' and 'rank') in df_nn.columns:
+            if candidates is not None: #only maintain L-R pairs for chi2 test
+                df_nn = df_nn.loc[candidates]
             dist2 = np.square(np.asarray(df_nn['dist']))
             dist_mean = np.mean(dist2)
             FC = dist2 / dist_mean
