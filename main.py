@@ -241,7 +241,7 @@ class Xct(Xct_metrics):
     def __str__(self):
         info = f'Xct object with the interaction between cells {self._cell_names[0]} X {self._cell_names[1]} = {self._cell_numbers[0]} X {self._cell_numbers[1]}'
         if '_w' in dir(self):
-            return info + f'\n# of genes = {len(self.genes_names[0])} X {len(self.genes_names[1])} \nCorrespondence has been built = {self._w.shape[0]} X {self._w.shape[1]}'
+            return info + f'\n# of genes = {len(self.genes_names[0])} X {len(self.genes_names[1])} \nCorrespondence = {self._w.shape[0]} X {self._w.shape[1]}'
         else:
             return info
                
@@ -331,45 +331,50 @@ class Xct(Xct_metrics):
 
         return S #.astype(float)
 
-    def build_w(self, queryDB = None, scale = True): 
-        '''build w: 3 modes, if None will use all the corresponding scores'''
+    def build_w(self, queryDB = 'full', scale = True, mu = 1): 
+        '''build w: 3 modes, if 'full' will use all the corresponding scores'''
         # u^2 + var
         metric_A_temp = (np.square(self._metric_A[0]) + self._metric_A[1])[:, None] 
         metric_B_temp = (np.square(self._metric_B[0]) + self._metric_B[1])[None, :] 
         #print(metric_A_temp.shape, metric_B_temp.shape)
         w12 = metric_A_temp@metric_B_temp
+        w12_orig = w12.copy()
         
-        if queryDB is None:
-            pass
-        else:
-            if queryDB == 'combinators':
-                # ada.var index of LR genes (the intersect of DB and object genes, no pair relationship maintained)
-                LR_idx_toUse = self._genes_index_DB
-
-            if queryDB == 'pairs':
-                # maintain L-R pair relationship, both > 0
-                LR_idx_toUse = self._genes_index_DB[(self._genes_index_DB[:, 0] > 0) & (self._genes_index_DB[:, 1] > 0)]
-
-            lig_idx = np.ravel(np.asarray(LR_idx_toUse[:, 0]))
+        def zero_out_w(w, LR_idx):
+            lig_idx = np.ravel(np.asarray(LR_idx[:, 0]))
             lig_idx = list(np.unique(lig_idx[lig_idx != 0]) - 1)
-            rec_idx = np.ravel(np.asarray(LR_idx_toUse[:, 1]))
+            rec_idx = np.ravel(np.asarray(LR_idx[:, 1]))
             rec_idx = list(np.unique(rec_idx[rec_idx != 0]) - 1)
             # reverse select and zeros LR that not in idx list
-            mask_lig = np.ones(w12.shape[0], dtype=np.bool)
+            mask_lig = np.ones(w.shape[0], dtype=np.bool)
             mask_lig[lig_idx] = 0
-            mask_rec = np.ones(w12.shape[1], dtype=np.bool)
+            mask_rec = np.ones(w.shape[1], dtype=np.bool)
             mask_rec[rec_idx] = 0
-            w12[mask_lig, :] = 0
-            w12[:, mask_rec] = 0 
-            assert np.count_nonzero(w12) == len(lig_idx)*len(rec_idx)
+            
+            w[mask_lig, :] = 0
+            w[:, mask_rec] = 0 
+            assert np.count_nonzero(w) == len(lig_idx) * len(rec_idx)    
+            
+            return w
+
+        if queryDB not in ['full', 'comb', 'pairs']:
+            raise NameError('queryDB using the keyword \'full\', \'comb\' or \'pairs\'')
+        elif queryDB == 'full':
+            pass
+        elif queryDB == 'comb':
+            # ada.var index of LR genes (the intersect of DB and object genes, no pair relationship maintained)
+            LR_idx_toUse = self._genes_index_DB
+            w12 = zero_out_w(w12, LR_idx_toUse)
+        elif queryDB == 'pairs':
+            # maintain L-R pair relationship, both > 0
+            LR_idx_toUse = self._genes_index_DB[(self._genes_index_DB[:, 0] > 0) & (self._genes_index_DB[:, 1] > 0)]
+            w12 = zero_out_w(w12, LR_idx_toUse)
 
         if scale:
-            mu = 1
-            w12 = mu * ((self._net_A+1).sum() + (self._net_B+1).sum()) / (2 * w12.sum()) * w12
+            w12 = mu * ((self._net_A+1).sum() + (self._net_B+1).sum()) / (2 * w12_orig.sum()) * w12 #scale factor using w12_orig
 
         w = np.block([[self._net_A+1, w12],
             [w12.T, self._net_B+1]])
-        #print('w shape:', w.shape)
 
         return w
 
@@ -399,28 +404,36 @@ class Xct(Xct_metrics):
     def nn_output(self, projections):
         '''output info of each pair'''
         #manifold alignment pair distances
+        print('computing pair-wise distances...')
         result_nn = self._pair_distance(projections) #dict
-        #print('manifold aligned pairs:', len(result_nn))
+        print('manifold aligned # of pairs:', len(result_nn))
 
         #output df
+        print('adding column \'rank\'...')
         df_nn = pd.DataFrame.from_dict(result_nn, orient='index', columns=['idx', 'dist']).sort_values(by=['dist'])
         df_nn['rank'] = np.arange(len(df_nn))
-
+        
+        print('adding column \'correspondence_score\'...')
         w12 = self._w[:self._net_A.shape[0], self._net_A.shape[1]:]
-
         correspondence_score = [w12[idx] for idx in np.asarray(df_nn['idx'])]
         df_nn['correspondence_score'] = correspondence_score
+    
         return df_nn 
+    
+    def filtered_nn_output(self, df_nn, candidates):
+        df_nn_filtered = df_nn.loc[candidates].sort_values(by=['rank']) #dist ranked L-R candidates
+        print('manifold aligned # of L-R pairs:', len(df_nn_filtered))
+        df_nn_filtered['rank_filtered'] = np.arange(len(df_nn_filtered))
 
-    def chi2_test(self, df_nn, candidates = None, pval = 0.05, FDR = False):
+        return df_nn_filtered
+
+    def chi2_test(self, df_nn, df = 1, pval = 0.05, FDR = False): #input df_nn_filtered
         '''chi-sqaure left tail test to have enriched pairs'''
         if ('dist' and 'rank') in df_nn.columns:
-            if candidates is not None: #only maintain L-R pairs for chi2 test
-                df_nn = df_nn.loc[candidates]
             dist2 = np.square(np.asarray(df_nn['dist']))
             dist_mean = np.mean(dist2)
             FC = dist2 / dist_mean
-            p = scipy.stats.chi2.cdf(FC, df = 1) #left tail CDF    
+            p = scipy.stats.chi2.cdf(FC, df = df) #left tail CDF    
             if FDR:
                 from statsmodels.stats.multitest import multipletests
                 rej, p, _, _ = multipletests(pvals = p, alpha = pval, method = 'fdr_bh')
@@ -431,7 +444,7 @@ class Xct(Xct_metrics):
     
             return df_enriched
         else:
-            raise NameError('require a resulted dataframe with column \'dist\' and \'rank\'')
+            raise NameError('require resulted dataframe with column \'dist\' and \'rank\'')
       
 def scores(adata, ref_obj, method = 0, a = 1, n = 100):
     '''cell labels permutation'''
@@ -470,10 +483,10 @@ if __name__ == '__main__':
     sc.pp.log1p(ada)
     ada.layers['log1p'] = ada.X.copy()
 
-    obj = Xct(ada, '14Mo', '15Mo', build_GRN = True, save_GRN = True, pcNet_name = 'Net_for_Test', mode = None)
+    obj = Xct(ada, '14Mo', '15Mo', build_GRN = True, save_GRN = True, pcNet_name = 'Net_for_Test', mode = 'full')
     print('building Xct object...')
     print(obj)
-    obj_load = Xct(ada, '14Mo', '15Mo', build_GRN = False, pcNet_name = 'Net_for_Test', mode = None)
+    obj_load = Xct(ada, '14Mo', '15Mo', build_GRN = False, pcNet_name = 'Net_for_Test', mode = 'full')
     print('Testing loading...')
     projections, losses = obj.nn_projection(n = 500, plot_loss = False)
     df_nn = obj.nn_output(projections)
