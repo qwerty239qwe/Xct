@@ -205,7 +205,7 @@ class Xct(Xct_metrics):
         self.genes_names = list(ada_A.var_names.astype(str)), list(ada_B.var_names.astype(str))
         self._X = ada_A.X, ada_B.X # input array for nn projection
         if verbose:
-            print(f'for interactions from {self._cell_names[0]} to {self._cell_names[1]} = {self._cell_numbers[0]} to {self._cell_numbers[1]}...')
+            print(f'initiating an Xct object for interactions from {self._cell_names[0]} ({self._cell_numbers[0]}) to {self._cell_names[1]} ({self._cell_numbers[1]})...')
         
         self._metric_A = np.vstack([self.get_metric(ada_A), self.chen2016_fit(ada_A)]) #len 5
         self._metric_B = np.vstack([self.get_metric(ada_B), self.chen2016_fit(ada_B)])
@@ -411,7 +411,7 @@ class Xct(Xct_metrics):
         #output df
         print('adding column \'rank\'...')
         df_nn = pd.DataFrame.from_dict(result_nn, orient='index', columns=['idx', 'dist']).sort_values(by=['dist'])
-        df_nn['rank'] = np.arange(len(df_nn))
+        df_nn['rank'] = np.arange(len(df_nn)) + 1
         
         print('adding column \'correspondence_score\'...')
         w12 = self._w[:self._net_A.shape[0], self._net_A.shape[1]:]
@@ -423,7 +423,7 @@ class Xct(Xct_metrics):
     def filtered_nn_output(self, df_nn, candidates):
         df_nn_filtered = df_nn.loc[candidates].sort_values(by=['rank']) #dist ranked L-R candidates
         print('manifold aligned # of L-R pairs:', len(df_nn_filtered))
-        df_nn_filtered['rank_filtered'] = np.arange(len(df_nn_filtered))
+        df_nn_filtered['rank_filtered'] = np.arange(len(df_nn_filtered)) + 1
 
         return df_nn_filtered
 
@@ -440,6 +440,8 @@ class Xct(Xct_metrics):
                 
             df_nn['p_val'] = p
             df_enriched = df_nn[df_nn['p_val'] < pval].sort_values(by=['rank'])
+            if FDR:
+                df_enriched.rename({'p_val': 'q_val'}, axis=1, inplace=True)
             print(f'\nTotal enriched: {len(df_enriched)} / {len(df_nn)}')
     
             return df_enriched
@@ -483,14 +485,17 @@ if __name__ == '__main__':
     sc.pp.log1p(ada)
     ada.layers['log1p'] = ada.X.copy()
 
-    obj = Xct(ada, '14Mo', '15Mo', build_GRN = True, save_GRN = True, pcNet_name = 'Net_for_Test', mode = 'full')
-    print('building Xct object...')
+    obj = Xct(ada, '14Mo', '15Mo', build_GRN = True, save_GRN = True, pcNet_name = 'Net_for_Test', mode = 'full', verbose = True)
     print(obj)
-    obj_load = Xct(ada, '14Mo', '15Mo', build_GRN = False, pcNet_name = 'Net_for_Test', mode = 'full')
-    print('Testing loading...')
+    # obj_load = Xct(ada, '14Mo', '15Mo', build_GRN = False, pcNet_name = 'Net_for_Test', mode = 'full', verbose = True)
+    # print('Testing loading...')
+
+    df1 = obj.fill_metric()
+    candidates = obj._candidates(df1)
     projections, losses = obj.nn_projection(n = 500, plot_loss = False)
     df_nn = obj.nn_output(projections)
-    df_enriched = obj.chi2_test(df_nn)
+    df_nn_filtered = obj.filtered_nn_output(df_nn, candidates)
+    df_enriched = obj.chi2_test(df_nn_filtered, df = 2, pval = 0.05)
     print(df_enriched.head())
 
 
