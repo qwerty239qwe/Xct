@@ -33,14 +33,16 @@ class Xct_metrics():
     
     def Xct_DB(self, specis = 'Human'):
         '''load omnipath DB for L-R pairs'''
-        if specis == 'Mouse':
-            pass
-        elif specis == 'Human':
-            LR = pd.read_csv('https://raw.githubusercontent.com/yjgeno/Xct/note/DB/omnipath_intercell_toUse_v2.csv')
-        else:
-            raise NameError('Current DB only supports \'Mouse\' and \'Human\'')
+        LR = pd.read_csv('https://raw.githubusercontent.com/yjgeno/Xct/dev/DB/omnipath_intercell_toUse_v2.csv')
         LR_toUse = LR[['genesymbol_intercell_source', 'genesymbol_intercell_target']]
         LR_toUse.columns = ['ligand', 'receptor']
+        if specis == 'Mouse':
+            for col in LR_toUse.columns:
+                LR_toUse[col].str.capitalize()        
+        elif specis == 'Human':
+            pass
+        else:
+            raise NameError('Current DB only supports \'Mouse\' and \'Human\'')      
         del LR
 
         return LR_toUse
@@ -205,7 +207,7 @@ class Xct(Xct_metrics):
         self.genes_names = list(ada_A.var_names.astype(str)), list(ada_B.var_names.astype(str))
         self._X = ada_A.X, ada_B.X # input array for nn projection
         if verbose:
-            print(f'initiating an Xct object for interactions from {self._cell_names[0]} ({self._cell_numbers[0]}) to {self._cell_names[1]} ({self._cell_numbers[1]})...')
+            print(f'init an Xct object for interactions from {self._cell_names[0]} ({self._cell_numbers[0]}) to {self._cell_names[1]} ({self._cell_numbers[1]})...')
         
         self._metric_A = np.vstack([self.get_metric(ada_A), self.chen2016_fit(ada_A)]) #len 5
         self._metric_B = np.vstack([self.get_metric(ada_B), self.chen2016_fit(ada_B)])
@@ -227,15 +229,17 @@ class Xct(Xct_metrics):
                 np.savetxt(f'data/{pcNet_name}_B.csv', self._net_B, delimiter="\t")
         else:
             try:
+                if verbose:
+                    print('loading GRNs...')
                 self._net_A = np.genfromtxt(f'data/{pcNet_name}_A.csv', delimiter="\t")
                 self._net_B = np.genfromtxt(f'data/{pcNet_name}_B.csv', delimiter="\t")
-                print('GRNs loaded...')
             except ImportError:
                 print('require pcNet_name where csv files saved in with tab as delimiter')
-
+        if verbose:
+            print('building correspondence...')
         self._w = self.build_w(queryDB = mode, scale = True) 
         if verbose:
-            print('correspondence has been built...')      
+            print('init completed.')      
         del ada_A, ada_B
 
     def __str__(self):
@@ -333,9 +337,11 @@ class Xct(Xct_metrics):
 
     def build_w(self, queryDB = 'full', scale = True, mu = 1): 
         '''build w: 3 modes, if 'full' will use all the corresponding scores'''
-        # u^2 + var
-        metric_A_temp = (np.square(self._metric_A[0]) + self._metric_A[1])[:, None] 
-        metric_B_temp = (np.square(self._metric_B[0]) + self._metric_B[1])[None, :] 
+        # u + var^2
+        # metric_A_temp = (np.square(self._metric_A[0]) + self._metric_A[1])[:, None] 
+        # metric_B_temp = (np.square(self._metric_B[0]) + self._metric_B[1])[None, :] 
+        metric_A_temp = (self._metric_A[0] + np.square(self._metric_A[1]))[:, None] 
+        metric_B_temp = (self._metric_B[0] + np.square(self._metric_B[1]))[None, :] 
         #print(metric_A_temp.shape, metric_B_temp.shape)
         w12 = metric_A_temp@metric_B_temp
         w12_orig = w12.copy()
