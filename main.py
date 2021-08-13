@@ -36,7 +36,7 @@ class Xct_metrics():
         if specis == 'Mouse':
             pass
         elif specis == 'Human':
-            LR = pd.read_csv('https://raw.githubusercontent.com/yjgeno/Xct/note/DB/omnipath_intercell_toUse_v1.csv')
+            LR = pd.read_csv('https://raw.githubusercontent.com/yjgeno/Xct/note/DB/omnipath_intercell_toUse_v2.csv')
         else:
             raise NameError('Current DB only supports \'Mouse\' and \'Human\'')
         LR_toUse = LR[['genesymbol_intercell_source', 'genesymbol_intercell_target']]
