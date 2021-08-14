@@ -433,7 +433,7 @@ class Xct(Xct_metrics):
 
         return df_nn_filtered
 
-    def chi2_test(self, df_nn, df = 1, pval = 0.05, FDR = False): #input df_nn_filtered
+    def chi2_test(self, df_nn, df = 3, pval = 0.05, FDR = False, candidates = None): #input all pairs (df_nn) for chi-sqaure and FDR on significant
         '''chi-sqaure left tail test to have enriched pairs'''
         if ('dist' and 'rank') in df_nn.columns:
             dist2 = np.square(np.asarray(df_nn['dist']))
@@ -448,9 +448,14 @@ class Xct(Xct_metrics):
             df_enriched = df_nn[df_nn['p_val'] < pval].sort_values(by=['rank'])
             if FDR:
                 df_enriched.rename({'p_val': 'q_val'}, axis=1, inplace=True)
+            if candidates is not None: #filter LR pairs among enriched pairs
+                overlap = set(candidates).intersection(set(df_enriched.index))
+                df_enriched = df_enriched.loc[overlap].sort_values(by=['rank'])
+                df_enriched['rank_filtered'] = np.arange(len(df_enriched)) + 1
             print(f'\nTotal enriched: {len(df_enriched)} / {len(df_nn)}')
-    
+
             return df_enriched
+        
         else:
             raise NameError('require resulted dataframe with column \'dist\' and \'rank\'')
       
