@@ -39,7 +39,7 @@ def train_and_project(x1_np, x2_np, w, d = 2, n=3000, lr=0.01, layers=None):
     elif len(layers) != 3:
         raise ValueError('Input node numbers of three hidden layers')
     else:
-        layer1 = layer2 = layers
+        layers1 = layers2 = layers
 
     losses = [] 
     torch.manual_seed(0)
