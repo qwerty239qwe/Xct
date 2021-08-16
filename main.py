@@ -33,7 +33,7 @@ class Xct_metrics():
     
     def Xct_DB(self, specis = 'Human'):
         '''load omnipath DB for L-R pairs'''
-        LR = pd.read_csv('https://raw.githubusercontent.com/yjgeno/Xct/dev/DB/omnipath_intercell_toUse_v2.csv')
+        LR = pd.read_csv('https://raw.githubusercontent.com/yjgeno/Xct/dev2/DB/omnipath_intercell_toUse_v2.csv')
         LR_toUse = LR[['genesymbol_intercell_source', 'genesymbol_intercell_target']]
         LR_toUse.columns = ['ligand', 'receptor']
         if specis == 'Mouse':
