@@ -27,11 +27,12 @@ class Xct_metrics():
             raise NameError('require adata with count and normalized layers named \'raw\' and \'log1p\'')
         else:
             self.genes = adata.var_names
-            self.DB = self.Xct_DB(specis = specis)
-            self._genes_index_DB = self.get_index(DB = self.DB)
+            self.LRs = self.LR_DB(specis = specis)
+            self._genes_index_DB = self.get_index(DB = self.LRs)
+            self.TFs = self.TF_DB(specis = specis)
 
     
-    def Xct_DB(self, specis = 'Human'):
+    def LR_DB(self, specis = 'Human'):
         '''load omnipath DB for L-R pairs'''
         LR = pd.read_csv('https://raw.githubusercontent.com/yjgeno/Xct/dev2/DB/omnipath_intercell_toUse_v2.csv')
         LR_toUse = LR[['genesymbol_intercell_source', 'genesymbol_intercell_target']]
@@ -42,14 +43,25 @@ class Xct_metrics():
         elif specis == 'Human':
             pass
         else:
-            raise NameError('Current DB only supports \'Mouse\' and \'Human\'')      
+            raise NameError('Current ligand/receptor DB only supports \'Mouse\' and \'Human\'')      
         del LR
 
         return LR_toUse
+
+    def TF_DB(self, specis = 'Human'):
+        '''load TFome DB for TFs'''
+        TFs = pd.read_csv('https://raw.githubusercontent.com/yjgeno/Xct/dev2/DB/41587_2020_742_MOESM3_ESM.csv', header=None, names=['TF_symbol'])
+        if specis == 'Mouse':
+            TFs['TF_symbol'].str.capitalize() 
+        elif specis == 'Human':
+            pass
+        else:
+            raise NameError('Current transcript factor DB only supports \'Mouse\' and \'Human\'')  
+        return TFs   
     
     def subset(self):
         '''subset adata var with only DB L and R'''
-        genes = np.ravel(self.DB.values) 
+        genes = np.ravel(self.LRs.values) 
         genes = np.unique(genes[genes != None])
         genes_use = self.genes.intersection(genes)
             
@@ -171,11 +183,6 @@ class Xct_metrics():
             plt.scatter(np.log10(xdata), ydata, s=3, marker='o') # orig
             plt.plot(np.log10(xSeq), ySeq_log, c='black', label='poly fit') # poly fit
             plt.plot(np.log10(xSeq), y_predict, label='robust lsq', c='r') # robust nonlinear
-
-            #ind = list(res[res['padj'] < fdr].index)[:ngenes] # index for filtered xdata, ydata
-            #for n, i in zip(['CCL19', 'CCR7', 'CXCL12', 'CXCR4'], [371, 388, 592, 598]):
-            #   plt.annotate(n, xy = (np.log10(xdata)[i], ydata[i]), xytext = (np.log10(xdata)[i]+1, ydata[i]+0.5),
-            #                 arrowprops=dict(arrowstyle="->", connectionstyle="arc3"))
             plt.xlabel('log10(mean)')
             plt.ylabel('log10(CV)')
             plt.legend(loc='lower left')
@@ -192,7 +199,7 @@ class Xct(Xct_metrics):
         '''build_GRN: if True to build GRN thru pcNet, if False to load built GRN files;
             save_GRN: save constructed 2 pcNet;
             pcNet_name: name of GRN (.csv) files, read/write;
-            3 modes to construct correspondence: None, 'combinators', 'pairs'
+            mode: 3 modes to construct correspondence: 'full, 'comb', 'pairs'
             '''
         Xct_metrics.__init__(self, adata)
         self._cell_names = CellA, CellB
@@ -223,7 +230,7 @@ class Xct(Xct_metrics):
                 print('GRN of Cell A has been built, start building GRN of Cell B...')
             self._net_B = pcNet(ada_B.X, nComp=5, symmetric=True)
             if verbose:
-                print('GRN of Cell B has been built, building correspondence..')
+                print('GRN of Cell B has been built, building correspondence...')
             if save_GRN:
                 np.savetxt(f'data/{pcNet_name}_A.csv', self._net_A, delimiter="\t")
                 np.savetxt(f'data/{pcNet_name}_B.csv', self._net_B, delimiter="\t")
@@ -243,7 +250,7 @@ class Xct(Xct_metrics):
         del ada_A, ada_B
 
     def __str__(self):
-        info = f'Xct object with the interaction between cells {self._cell_names[0]} X {self._cell_names[1]} = {self._cell_numbers[0]} X {self._cell_numbers[1]}'
+        info = f'Xct object for interactions from {self._cell_names[0]} ({self._cell_numbers[0]}) to {self._cell_names[1]} ({self._cell_numbers[1]})'
         if '_w' in dir(self):
             return info + f'\n# of genes = {len(self.genes_names[0])} X {len(self.genes_names[1])} \nCorrespondence = {self._w.shape[0]} X {self._w.shape[1]}'
         else:
@@ -286,12 +293,12 @@ class Xct(Xct_metrics):
         #DB = skin.DB.reset_index(drop = True, inplace = False) 
            
         if ref_obj is None:
-            df = pd.concat([self.DB, df], axis=1) # concat 1:1 since sharing same index
+            df = pd.concat([self.LRs, df], axis=1) # concat 1:1 since sharing same index
             mask1 = (df['mean_L'] > 0) & (df['mean_R'] > 0) # filter 0 for first LR
             df = df[mask1]
             
         else: 
-            ref_DB = self.DB.iloc[ref_obj.ref.index, :].reset_index(drop = True, inplace = False) #match index
+            ref_DB = self.LRs.iloc[ref_obj.ref.index, :].reset_index(drop = True, inplace = False) #match index
             df = pd.concat([ref_DB, df], axis=1)
             df.set_index(pd.Index(ref_obj.ref.index), inplace = True)
             
@@ -407,26 +414,33 @@ class Xct(Xct_metrics):
         
         return d    
 
-    def nn_output(self, projections):
+    def nn_aligned_dist(self, projections, rank = True):
         '''output info of each pair'''
         #manifold alignment pair distances
         print('computing pair-wise distances...')
         result_nn = self._pair_distance(projections) #dict
         print('manifold aligned # of pairs:', len(result_nn))
 
-        #output df
-        print('adding column \'rank\'...')
-        df_nn = pd.DataFrame.from_dict(result_nn, orient='index', columns=['idx', 'dist']).sort_values(by=['dist'])
-        df_nn['rank'] = np.arange(len(df_nn)) + 1
+        #output dist matrix     
+        df_nn = pd.DataFrame.from_dict(result_nn, orient='index', columns=['idx', 'dist'])
+
+        dist_net = np.asarray(df_nn['dist']).reshape((len(self.genes_names[0]), len(self.genes_names[1])))
+        df_nn_to_output = pd.DataFrame(dist_net, index = self.genes_names[0], columns = self.genes_names[1])
         
-        print('adding column \'correspondence_score\'...')
-        w12 = self._w[:self._net_A.shape[0], self._net_A.shape[1]:]
-        correspondence_score = [w12[idx] for idx in np.asarray(df_nn['idx'])]
-        df_nn['correspondence_score'] = correspondence_score
+        if rank:
+            #default: output ranked dist
+            print('adding column \'rank\'...')
+            df_nn_to_output = df_nn.sort_values(by=['dist'])
+            df_nn_to_output['rank'] = np.arange(len(df_nn_to_output)) + 1
+            
+            print('adding column \'correspondence_score\'...')
+            w12 = self._w[:self._net_A.shape[0], self._net_A.shape[1]:]
+            correspondence_score = [w12[idx] for idx in np.asarray(df_nn_to_output['idx'])]
+            df_nn_to_output['correspondence_score'] = correspondence_score
     
-        return df_nn 
+        return df_nn_to_output 
     
-    def filtered_nn_output(self, df_nn, candidates):
+    def filtered_nn_aligned_dist(self, df_nn, candidates):
         df_nn_filtered = df_nn.loc[candidates].sort_values(by=['rank']) #dist ranked L-R candidates
         print('manifold aligned # of L-R pairs:', len(df_nn_filtered))
         df_nn_filtered['rank_filtered'] = np.arange(len(df_nn_filtered)) + 1
@@ -458,7 +472,11 @@ class Xct(Xct_metrics):
         
         else:
             raise NameError('require resulted dataframe with column \'dist\' and \'rank\'')
-      
+
+    def _add_names_to_nets(self):
+        self._net_A = pd.DataFrame(self._net_A, columns = self.genes_names[0], index = self.genes_names[0])
+        self._net_B = pd.DataFrame(self._net_B, columns = self.genes_names[1], index = self.genes_names[1])
+
 def scores(adata, ref_obj, method = 0, a = 1, n = 100):
     '''cell labels permutation'''
     result = []
@@ -504,8 +522,8 @@ if __name__ == '__main__':
     df1 = obj.fill_metric()
     candidates = obj._candidates(df1)
     projections, losses = obj.nn_projection(n = 500, plot_loss = False)
-    df_nn = obj.nn_output(projections)
-    df_nn_filtered = obj.filtered_nn_output(df_nn, candidates)
+    df_nn = obj.nn_aligned_dist(projections)
+    df_nn_filtered = obj.filtered_nn_aligned_dist(df_nn, candidates)
     df_enriched = obj.chi2_test(df_nn_filtered, df = 2, pval = 0.05)
     print(df_enriched.head())
 
