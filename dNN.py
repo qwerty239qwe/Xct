@@ -1,7 +1,5 @@
 import numpy as np
 import scipy
-from neighborhood import neighbor_graph, laplacian
-#from correspondence import Correspondence
 from stiefel import *
 import itertools
 import torch
@@ -52,7 +50,7 @@ def train_and_project(x1_np, x2_np, w, d = 2, n=3000, lr=0.01, layers=None):
     x1 = torch.from_numpy(x1_np.astype(np.float32))
     x2 = torch.from_numpy(x2_np.astype(np.float32))
 
-    L_np = laplacian(w, normed=False)  #csgraph.laplacian(w, normed=False)
+    L_np = scipy.sparse.csgraph.laplacian(w, normed=False) 
     L = torch.from_numpy(L_np.astype(np.float32))
     
     #params = list(model_1.parameters()) + list(model_2.parameters())
