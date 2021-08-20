@@ -21,7 +21,7 @@ except ImportError:
 
 class Xct_metrics():
     '''require adata with layer 'raw' (counts) and 'log1p' (normalized), cell labels in obs 'ident' '''
-    __slots__ = ('genes', 'DB', '_genes_index_DB')
+    __slots__ = ('genes', 'LRs', '_genes_index_DB', 'TFs')
     def __init__(self, adata, specis = 'Human'): 
         if not ('raw' and 'log1p' in adata.layers.keys()):
             raise NameError('require adata with count and normalized layers named \'raw\' and \'log1p\'')
@@ -244,7 +244,7 @@ class Xct(Xct_metrics):
                 print('require pcNet_name where csv files saved in with tab as delimiter')
         if verbose:
             print('building correspondence...')
-        self._w = self.build_w(queryDB = mode, scale = True) 
+        self._w = self._build_w(queryDB = mode, scale = True) 
         if verbose:
             print('init completed.')      
         del ada_A, ada_B
@@ -310,7 +310,7 @@ class Xct(Xct_metrics):
 
         return df
 
-    def _candidates(self, df_filtered):
+    def get_candidates(self, df_filtered):
         '''selected L-R candidates'''
         candidates = [a+'_'+b for a, b in zip(np.asarray(df_filtered['ligand'],dtype=str), np.asarray(df_filtered['receptor'],dtype=str))]
         return candidates
@@ -342,7 +342,7 @@ class Xct(Xct_metrics):
 
         return S #.astype(float)
 
-    def build_w(self, queryDB = 'full', scale = True, mu = 1): 
+    def _build_w(self, queryDB = 'full', scale = True, mu = 1): 
         '''build w: 3 modes, if 'full' will use all the corresponding scores'''
         # u + var^2
         # metric_A_temp = (np.square(self._metric_A[0]) + self._metric_A[1])[:, None] 
@@ -440,42 +440,10 @@ class Xct(Xct_metrics):
     
         return df_nn_to_output 
     
-    def filtered_nn_aligned_dist(self, df_nn, candidates):
-        df_nn_filtered = df_nn.loc[candidates].sort_values(by=['rank']) #dist ranked L-R candidates
-        print('manifold aligned # of L-R pairs:', len(df_nn_filtered))
-        df_nn_filtered['rank_filtered'] = np.arange(len(df_nn_filtered)) + 1
-
-        return df_nn_filtered
-
-    def chi2_test(self, df_nn, df = 3, pval = 0.05, FDR = False, candidates = None): #input all pairs (df_nn) for chi-sqaure and FDR on significant
-        '''chi-sqaure left tail test to have enriched pairs'''
-        if ('dist' and 'rank') in df_nn.columns:
-            dist2 = np.square(np.asarray(df_nn['dist']))
-            dist_mean = np.mean(dist2)
-            FC = dist2 / dist_mean
-            p = scipy.stats.chi2.cdf(FC, df = df) #left tail CDF    
-            if FDR:
-                from statsmodels.stats.multitest import multipletests
-                rej, p, _, _ = multipletests(pvals = p, alpha = pval, method = 'fdr_bh')
-                
-            df_nn['p_val'] = p
-            df_enriched = df_nn[df_nn['p_val'] < pval].sort_values(by=['rank'])
-            if FDR:
-                df_enriched.rename({'p_val': 'q_val'}, axis=1, inplace=True)
-            if candidates is not None: #filter LR pairs among enriched pairs
-                overlap = set(candidates).intersection(set(df_enriched.index))
-                df_enriched = df_enriched.loc[overlap].sort_values(by=['rank'])
-                df_enriched['rank_filtered'] = np.arange(len(df_enriched)) + 1
-            print(f'\nTotal enriched: {len(df_enriched)} / {len(df_nn)}')
-
-            return df_enriched
-        
-        else:
-            raise NameError('require resulted dataframe with column \'dist\' and \'rank\'')
-
-    def _add_names_to_nets(self):
+    def add_names_to_nets(self):
         self._net_A = pd.DataFrame(self._net_A, columns = self.genes_names[0], index = self.genes_names[0])
         self._net_B = pd.DataFrame(self._net_B, columns = self.genes_names[1], index = self.genes_names[1])
+        print('completed.')
 
 def scores(adata, ref_obj, method = 0, a = 1, n = 100):
     '''cell labels permutation'''
@@ -491,7 +459,6 @@ def scores(adata, ref_obj, method = 0, a = 1, n = 100):
     
     return np.array(result).T
   
-  
 def pmt_test(orig_score, scores, p = 0.05):
     '''significant result for permutation test'''
     enriched_i, pvals, counts = ([] for _ in range(3))
@@ -499,13 +466,43 @@ def pmt_test(orig_score, scores, p = 0.05):
         count = sum(orig_score[i] > value for value in dist)
         pval = 1- count/len(dist)
         pvals.append(pval)
-        counts.append(count)
-        
+        counts.append(count)       
         if pval < p:
-            enriched_i.append(i)           
-    
+            enriched_i.append(i)             
     return enriched_i, pvals, counts
-  
+
+def filtered_nn_aligned_dist(df_nn, candidates):
+    df_nn_filtered = df_nn.loc[candidates].sort_values(by=['rank']) #dist ranked L-R candidates
+    print('manifold aligned # of L-R pairs:', len(df_nn_filtered))
+    df_nn_filtered['rank_filtered'] = np.arange(len(df_nn_filtered)) + 1
+
+    return df_nn_filtered
+
+def chi2_test(df_nn, df = 3, pval = 0.05, FDR = False, candidates = None): #input all pairs (df_nn) for chi-sqaure and FDR on significant
+    '''chi-sqaure left tail test to have enriched pairs'''
+    if ('dist' and 'rank') in df_nn.columns:
+        dist2 = np.square(np.asarray(df_nn['dist']))
+        dist_mean = np.mean(dist2)
+        FC = dist2 / dist_mean
+        p = scipy.stats.chi2.cdf(FC, df = df) #left tail CDF    
+        if FDR:
+            from statsmodels.stats.multitest import multipletests
+            rej, p, _, _ = multipletests(pvals = p, alpha = pval, method = 'fdr_bh')
+            
+        df_nn['p_val'] = p
+        df_enriched = df_nn[df_nn['p_val'] < pval].sort_values(by=['rank'])
+        if FDR:
+            df_enriched.rename({'p_val': 'q_val'}, axis=1, inplace=True)
+        if candidates is not None: #filter LR pairs among enriched pairs
+            overlap = set(candidates).intersection(set(df_enriched.index))
+            df_enriched = df_enriched.loc[overlap].sort_values(by=['rank'])
+            df_enriched['rank_filtered'] = np.arange(len(df_enriched)) + 1
+        print(f'\nTotal enriched: {len(df_enriched)} / {len(df_nn)}')
+
+        return df_enriched
+    
+    else:
+        raise NameError('require resulted dataframe with column \'dist\' and \'rank\'') 
   
 if __name__ == '__main__':
     ada = sc.datasets.paul15()[:, :100] # raw counts
@@ -520,11 +517,10 @@ if __name__ == '__main__':
     # print('Testing loading...')
 
     df1 = obj.fill_metric()
-    candidates = obj._candidates(df1)
+    candidates = obj.get_candidates(df1)
     projections, losses = obj.nn_projection(n = 500, plot_loss = False)
     df_nn = obj.nn_aligned_dist(projections)
-    df_nn_filtered = obj.filtered_nn_aligned_dist(df_nn, candidates)
-    df_enriched = obj.chi2_test(df_nn_filtered, df = 2, pval = 0.05)
+    df_enriched = chi2_test(df_nn, df = 2, FDR = False, candidates = candidates)
     print(df_enriched.head())
 
 

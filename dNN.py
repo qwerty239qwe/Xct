@@ -23,7 +23,7 @@ class Net(nn.Module):
         y_pred = self.linear3(h2_sigmoid)
         return y_pred
 
-def train_and_project(x1_np, x2_np, w, d = 2, n=3000, lr=0.01, layers=None):
+def train_and_project(x1_np, x2_np, w, d = 2, n = 3000, lr = 0.001, layers = None):
 
     if not ((isinstance(x1_np, np.ndarray)) & (isinstance(x2_np, np.ndarray))):
         raise TypeError('Input numpy arrays with genes by cells')
