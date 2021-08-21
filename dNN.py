@@ -55,14 +55,12 @@ def train_and_project(x1_np, x2_np, w, d = 2, n = 3000, lr = 0.001, layers = Non
     
     #params = list(model_1.parameters()) + list(model_2.parameters())
     params = [model_1.parameters(), model_2.parameters()]
-
     optimizer = torch.optim.Adam(itertools.chain(*params), lr = lr)
     
     for t in range(n):
         # Forward pass: Compute predicted y by passing x to the model
         y1_pred = model_1(x1)
         y2_pred = model_2(x2)
-        #print('y1, y2', y1_pred.shape, y2_pred.shape)
 
         outputs = torch.cat((y1_pred, y2_pred), 0)
         #print('outputs', outputs.shape)
