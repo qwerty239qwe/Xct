@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import scanpy as sc
 import scipy
 from scipy.optimize import least_squares
+import itertools
 import warnings
 warnings.filterwarnings("ignore")
 sc.settings.verbosity = 0
@@ -14,7 +15,6 @@ try:
     syspath.append(ospath.join(ospath.expanduser("~"), './'))
     
     from pcNet import pcNet
-    import dNN 
 except ImportError:
     print('Module not found')
 
@@ -390,60 +390,12 @@ class Xct(Xct_metrics):
             [w12.T, self._net_B+1]])
 
         return w
-
-    def nn_projection(self, d = 2, n = 3000, lr = 0.001, plot_loss = False):
-        '''manifold alignment by neural network'''
-        x1_np = scipy.sparse.csr_matrix.toarray(self._X[0].T) if scipy.sparse.issparse(self._X[0]) else self._X[0].T #gene by cell
-        x2_np = scipy.sparse.csr_matrix.toarray(self._X[1].T) if scipy.sparse.issparse(self._X[1]) else self._X[1].T
-        
-        projections, losses = dNN.train_and_project(x1_np, x2_np, d=d, w=self._w, n=n, lr=lr)
-        if plot_loss:
-            plt.figure(figsize=(6, 5), dpi=80)
-            plt.plot(np.arange(len(losses))*100, losses)
-            #plt.savefig('fig.png', dpi=80)
-            plt.show()
-        
-        return projections, losses
-
-    def _pair_distance(self, projections): #projections: manifold alignment, ndarray
-        '''distances of each pair in latent space'''
-        d = {}
-        for i, l in enumerate(self.genes_names[0]):
-            for j, r in enumerate(self.genes_names[1]):
-                d[f'{l}_{r}'] = [(i, j), np.linalg.norm(projections[i, :] - projections[len(self.genes_names[0]) + j, :])]
-        
-        return d    
-
-    def nn_aligned_dist(self, projections, rank = True):
-        '''output info of each pair'''
-        #manifold alignment pair distances
-        print('computing pair-wise distances...')
-        result_nn = self._pair_distance(projections) #dict
-        print('manifold aligned # of pairs:', len(result_nn))
-
-        #output dist matrix     
-        df_nn = pd.DataFrame.from_dict(result_nn, orient='index', columns=['idx', 'dist'])
-
-        dist_net = np.asarray(df_nn['dist']).reshape((len(self.genes_names[0]), len(self.genes_names[1])))
-        df_nn_to_output = pd.DataFrame(dist_net, index = self.genes_names[0], columns = self.genes_names[1])
-        
-        if rank:
-            #default: output ranked dist
-            print('adding column \'rank\'...')
-            df_nn_to_output = df_nn.sort_values(by=['dist'])
-            df_nn_to_output['rank'] = np.arange(len(df_nn_to_output)) + 1
-            
-            print('adding column \'correspondence_score\'...')
-            w12 = self._w[:self._net_A.shape[0], self._net_A.shape[1]:]
-            correspondence_score = [w12[idx] for idx in np.asarray(df_nn_to_output['idx'])]
-            df_nn_to_output['correspondence_score'] = correspondence_score
-    
-        return df_nn_to_output 
     
     def add_names_to_nets(self):
         self._net_A = pd.DataFrame(self._net_A, columns = self.genes_names[0], index = self.genes_names[0])
         self._net_B = pd.DataFrame(self._net_B, columns = self.genes_names[1], index = self.genes_names[1])
         print('completed.')
+
 
 def scores(adata, ref_obj, method = 0, a = 1, n = 100):
     '''cell labels permutation'''
@@ -459,6 +411,7 @@ def scores(adata, ref_obj, method = 0, a = 1, n = 100):
     
     return np.array(result).T
   
+
 def pmt_test(orig_score, scores, p = 0.05):
     '''significant result for permutation test'''
     enriched_i, pvals, counts = ([] for _ in range(3))
@@ -471,16 +424,102 @@ def pmt_test(orig_score, scores, p = 0.05):
             enriched_i.append(i)             
     return enriched_i, pvals, counts
 
+
+def get_counts_np(*objects):
+    '''return a list of counts in numpy array, gene by cell'''
+    if not all(isinstance(obj, Xct) for obj in objects):
+        raise TypeError('input Xct object(s)')
+    else:
+        counts_np = list(itertools.chain(*([obj._X[0].T, obj._X[1].T] for obj in objects))) #gene by cell
+        counts_np = [counts.toarray() if scipy.sparse.issparse(counts) else counts for counts in counts_np]
+        return counts_np # a list
+
+
+def plot_nn_loss(losses):
+    '''manifold alignment by neural network'''
+    #projections, losses = dNN.train_and_project(counts_np, w=self._w, dim=2, steps=1000, lr=0.001)
+    plt.figure(figsize=(6, 5), dpi=80)
+    plt.plot(np.arange(len(losses))*100, losses)
+    #plt.savefig('fig.png', dpi=80)
+    plt.show()
+
+
+def _pair_distance(object, projections): #projections: manifold alignment, ndarray
+    '''distances of each pair in latent space'''
+    d = {}
+    for i, l in enumerate(object.genes_names[0]):
+        for j, r in enumerate(object.genes_names[1]):
+            d[f'{l}_{r}'] = [(i, j), np.linalg.norm(projections[i, :] - projections[len(object.genes_names[0]) + j, :])]
+    
+    return d    
+
+
+def nn_aligned_dist(object, projections, rank = True):
+    '''output info of each pair'''
+    #manifold alignment pair distances
+    print('computing pair-wise distances...')
+    result_nn = _pair_distance(object, projections) #dict
+    print('manifold aligned # of pairs:', len(result_nn))
+
+    #output dist matrix     
+    df_nn = pd.DataFrame.from_dict(result_nn, orient='index', columns=['idx', 'dist'])
+
+    dist_net = np.asarray(df_nn['dist']).reshape((len(object.genes_names[0]), len(object.genes_names[1])))
+    df_nn_to_output = pd.DataFrame(dist_net, index = object.genes_names[0], columns = object.genes_names[1])
+    
+    if rank:
+        #default: output ranked dist
+        print('adding column \'rank\'...')
+        df_nn_to_output = df_nn.sort_values(by=['dist'])
+        df_nn_to_output['rank'] = np.arange(len(df_nn_to_output)) + 1
+        
+        print('adding column \'correspondence_score\'...')
+        w12 = object._w[:object._net_A.shape[0], object._net_A.shape[1]:]
+        correspondence_score = [w12[idx] for idx in np.asarray(df_nn_to_output['idx'])]
+        df_nn_to_output['correspondence_score'] = correspondence_score
+
+    return df_nn_to_output 
+
+
 def filtered_nn_aligned_dist(df_nn, candidates):
+    '''output info of only L-R pairs'''
     df_nn_filtered = df_nn.loc[candidates].sort_values(by=['rank']) #dist ranked L-R candidates
     print('manifold aligned # of L-R pairs:', len(df_nn_filtered))
     df_nn_filtered['rank_filtered'] = np.arange(len(df_nn_filtered)) + 1
 
     return df_nn_filtered
 
-def chi2_test(df_nn, df = 3, pval = 0.05, FDR = False, candidates = None): #input all pairs (df_nn) for chi-sqaure and FDR on significant
+def build_W(*objects):
+    '''build a cross-object corresponding matrix for differential analysis'''
+    W12 = np.zeros((objects[0]._w.shape[0], objects[1]._w.shape[1]), float)
+
+    mu = 0.9
+    scaled_diag = mu * ((objects[0]._w).sum() + (objects[1]._w).sum()) / (4 * len(W12)) 
+    np.fill_diagonal(W12, scaled_diag)
+
+    W = np.block([[objects[0]._w, W12],
+    [W12.T, objects[1]._w]])
+    
+    return W
+
+
+def nn_aligned_dist_diff(df_nn1, df_nn2):
+    '''pair-wise difference of aligned distance'''
+    df_nn_all = pd.concat([df_nn1, df_nn2], axis=1) 
+    df_nn_all['diff'] = np.square(df_nn_all['dist'].iloc[:, 0] - df_nn_all['dist'].iloc[:, 1]) #df with same colnames
+    df_nn_all = df_nn_all.sort_values(by=['diff'], ascending=False)
+    df_nn_all['diff_rank'] = np.arange(len(df_nn_all)) + 1
+
+    return df_nn_all
+
+
+def chi2_test(df_nn, df = 3, pval = 0.05, FDR = True, candidates = None): #input all pairs (df_nn) for chi-sqaure and FDR on significant
     '''chi-sqaure left tail test to have enriched pairs'''
-    if ('dist' and 'rank') in df_nn.columns:
+    if ('dist' and 'rank') not in df_nn.columns:
+        raise NameError('require resulted dataframe with column \'dist\' and \'rank\'') 
+    else:
+            # keys = ['diff', 'diff_rank']
+            # keys = ['dist', 'rank']
         dist2 = np.square(np.asarray(df_nn['dist']))
         dist_mean = np.mean(dist2)
         FC = dist2 / dist_mean
@@ -496,15 +535,42 @@ def chi2_test(df_nn, df = 3, pval = 0.05, FDR = False, candidates = None): #inpu
         if candidates is not None: #filter LR pairs among enriched pairs
             overlap = set(candidates).intersection(set(df_enriched.index))
             df_enriched = df_enriched.loc[overlap].sort_values(by=['rank'])
-            df_enriched['rank_filtered'] = np.arange(len(df_enriched)) + 1
+            df_enriched['enriched_rank'] = np.arange(len(df_enriched)) + 1
+        print(f'\nTotal enriched: {len(df_enriched)} / {len(df_nn)}')
+
+        return df_enriched
+
+          
+def chi2_diff_test(df_nn, df = 2, pval = 0.05, FDR = False, candidates = None): #input all pairs (df_nn) for chi-sqaure and FDR on significant
+    '''chi-sqaure left tail test to have enriched pairs'''
+    if ('diff' and 'diff_rank') in df_nn.columns:
+        #dist2 = np.square(np.asarray(df_nn['diff']))
+        dist_mean = np.mean(df_nn['diff'])
+        FC = np.asarray(df_nn['diff']) / dist_mean
+        p = 1- scipy.stats.chi2.cdf(FC, df = df) #left tail CDF    ???
+        if FDR:
+            from statsmodels.stats.multitest import multipletests
+            rej, p, _, _ = multipletests(pvals = p, alpha = pval, method = 'fdr_bh')
+            
+        df_nn['p_val'] = p
+        df_enriched = df_nn[df_nn['p_val'] < pval].sort_values(by=['diff_rank'])
+        if FDR:
+            df_enriched.rename({'p_val': 'q_val'}, axis=1, inplace=True)
+        if candidates is not None: #filter LR pairs among enriched pairs
+            overlap = set(candidates).intersection(set(df_enriched.index))
+            df_enriched = df_enriched.loc[overlap].sort_values(by=['diff_rank'])
+            df_enriched['enriched_rank'] = np.arange(len(df_enriched)) + 1
         print(f'\nTotal enriched: {len(df_enriched)} / {len(df_nn)}')
 
         return df_enriched
     
     else:
-        raise NameError('require resulted dataframe with column \'dist\' and \'rank\'') 
-  
+        raise NameError('require resulted dataframe with column \'diff\' and \'diff_rank\'') 
+
+
 if __name__ == '__main__':
+    import dNN
+
     ada = sc.datasets.paul15()[:, :100] # raw counts
     ada.obs = ada.obs.rename(columns={'paul15_clusters': 'ident'})
     ada.layers['raw'] = np.asarray(ada.X, dtype=int)
@@ -518,9 +584,11 @@ if __name__ == '__main__':
 
     df1 = obj.fill_metric()
     candidates = obj.get_candidates(df1)
-    projections, losses = obj.nn_projection(n = 500, plot_loss = False)
-    df_nn = obj.nn_aligned_dist(projections)
-    df_enriched = chi2_test(df_nn, df = 2, FDR = False, candidates = candidates)
+    counts_np = get_counts_np(obj)
+    projections, losses = dNN.train_and_project(counts_np, obj._w, dim = 2, steps = 1000, lr = 0.001)
+
+    df_nn = nn_aligned_dist(obj, projections)
+    df_enriched = chi2_test(df_nn, df = 3, FDR = False, candidates = candidates)
     print(df_enriched.head())
 
 
