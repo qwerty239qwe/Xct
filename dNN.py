@@ -6,11 +6,9 @@ import torch
 import torch.nn as nn
 #import torch.nn.functional as F
 cuda = torch.device('cuda') 
-
-
-"""Defines the neural network"""
-
+        
 class Net(nn.Module):
+    """Define the neural network"""
     def __init__(self, D_in, H1, H2, D_out):
         super(Net, self).__init__()
         self.linear1 = torch.nn.Linear(D_in, H1)
@@ -23,46 +21,47 @@ class Net(nn.Module):
         y_pred = self.linear3(h2_sigmoid)
         return y_pred
 
-def train_and_project(x1_np, x2_np, w, d = 2, n = 3000, lr = 0.001, layers = None):
+def train_and_project(counts_np, w, dim = 2, steps = 1000, lr = 0.001, layers = None):
+    '''counts_np: list of counts in numpy array, gene by cell'''
+    if not all(isinstance(x_np, np.ndarray) for x_np in counts_np):
+        raise TypeError('input a list of counts in numpy arrays with genes by cells')
+    if not sum([x_np.shape[0] for x_np in counts_np]) == w.shape[0]:
+        raise ValueError('input sequence of counts consistent with correspondence')
 
-    if not ((isinstance(x1_np, np.ndarray)) & (isinstance(x2_np, np.ndarray))):
-        raise TypeError('Input numpy arrays with genes by cells')
-
+    n = len(counts_np)
+    d = {}
     if layers is None:
         a = 4
-        n1 = scipy.stats.gmean([x1_np.shape[1], d]).astype(int)
-        n2 = scipy.stats.gmean([x2_np.shape[1], d]).astype(int)
-        layers1 = [a*n1, n1, d]
-        layers2 = [a*n2, n2, d]
+        for i in range(1, n+1):
+            d[f'n_{i}'] = scipy.stats.gmean([counts_np[i-1].shape[1], dim]).astype(int)
+            d[f'layers_{i}'] = [a*d[f'n_{i}'], d[f'n_{i}'], dim]
     elif len(layers) != 3:
-        raise ValueError('Input node numbers of three hidden layers')
+        raise ValueError('input node numbers of three hidden layers')
     else:
-        layers1 = layers2 = layers
+        for i in range(1, n+1):
+            d[f'layers_{i}'] = layers
 
     losses = [] 
     torch.manual_seed(0)
 
-    model_1 = Net(x1_np.shape[1], layers1[0], layers1[1], layers1[2])
-    model_2 = Net(x2_np.shape[1], layers2[0], layers2[1], layers2[2])
-    print(model_1)
-    print(model_2)
+    for i in range(1, n+1):
+        d[f'model_{i}'] = Net(counts_np[i-1].shape[1], d[f'layers_{i}'][0], d[f'layers_{i}'][1], d[f'layers_{i}'][2])
+        print(d[f'model_{i}'])
+        d[f'x_{i}'] = torch.from_numpy(counts_np[i-1].astype(np.float32))
 
-    x1 = torch.from_numpy(x1_np.astype(np.float32))
-    x2 = torch.from_numpy(x2_np.astype(np.float32))
-
-    L_np = scipy.sparse.csgraph.laplacian(w, normed=False) 
+    L_np = scipy.sparse.csgraph.laplacian(w, normed = False) 
     L = torch.from_numpy(L_np.astype(np.float32))
     
-    #params = list(model_1.parameters()) + list(model_2.parameters())
-    params = [model_1.parameters(), model_2.parameters()]
+    params = [d[f'model_{i}'].parameters() for i in range(1, n+1)]
     optimizer = torch.optim.Adam(itertools.chain(*params), lr = lr)
     
-    for t in range(n):
+    for t in range(steps):
         # Forward pass: Compute predicted y by passing x to the model
-        y1_pred = model_1(x1)
-        y2_pred = model_2(x2)
+        y_preds = []
+        for i in range(1, n+1):
+            y_preds.append(d[f'model_{i}'](d[f'x_{i}']))
 
-        outputs = torch.cat((y1_pred, y2_pred), 0)
+        outputs = torch.cat(y_preds[:], 0)
         #print('outputs', outputs.shape)
         
         # Project the output onto Stiefel Manifold
@@ -73,14 +72,14 @@ def train_and_project(x1_np, x2_np, w, d = 2, n = 3000, lr = 0.001, layers = Non
         loss = torch.trace(proj_outputs.t()@L@proj_outputs)
         
         if t == 0 or t%100 == 99:
-            print(t, loss.item())
+            print(t+1, loss.item())
             losses.append(loss.item())
 
         # Zero gradients, perform a backward pass, and update the weights.
         proj_outputs.retain_grad() #et
 
         optimizer.zero_grad()
-        loss.backward(retain_graph=True)
+        loss.backward(retain_graph = True)
 
         # Project the (Euclidean) gradient onto the tangent space of Stiefel Manifold (to get Rimannian gradient)
         rgrad = proj_stiefel(proj_outputs, proj_outputs.grad) #pt
@@ -94,7 +93,3 @@ def train_and_project(x1_np, x2_np, w, d = 2, n = 3000, lr = 0.001, layers = Non
     proj_outputs_np = proj_outputs.detach().numpy()
     
     return proj_outputs_np, losses
-  
-  
-  
-  
