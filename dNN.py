@@ -22,8 +22,9 @@ class Net(nn.Module):
         return y_pred
 
 def train_and_project(counts_np, w, dim = 2, steps = 1000, lr = 0.001, layers = None):
-    '''manifold alignment by neural network,
-        counts_np: list of counts in numpy array, gene by cell'''
+    '''manifold alignment by neural network
+        counts_np: list of counts in numpy array, gene by cell;
+        w: correspondence'''
     if not all(isinstance(x_np, np.ndarray) for x_np in counts_np):
         raise TypeError('input a list of counts in numpy arrays with genes by cells')
     if not sum([x_np.shape[0] for x_np in counts_np]) == w.shape[0]:
@@ -62,7 +63,7 @@ def train_and_project(counts_np, w, dim = 2, steps = 1000, lr = 0.001, layers = 
         for i in range(1, n+1):
             y_preds.append(d[f'model_{i}'](d[f'x_{i}']))
 
-        outputs = torch.cat(y_preds[:], 0)
+        outputs = torch.cat(y_preds[:], 0) #vertical concat
         #print('outputs', outputs.shape)
         
         # Project the output onto Stiefel Manifold
