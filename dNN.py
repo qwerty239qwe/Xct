@@ -22,7 +22,8 @@ class Net(nn.Module):
         return y_pred
 
 def train_and_project(counts_np, w, dim = 2, steps = 1000, lr = 0.001, layers = None):
-    '''counts_np: list of counts in numpy array, gene by cell'''
+    '''manifold alignment by neural network,
+        counts_np: list of counts in numpy array, gene by cell'''
     if not all(isinstance(x_np, np.ndarray) for x_np in counts_np):
         raise TypeError('input a list of counts in numpy arrays with genes by cells')
     if not sum([x_np.shape[0] for x_np in counts_np]) == w.shape[0]:

@@ -24,7 +24,7 @@ class Xct_metrics():
     __slots__ = ('genes', 'LRs', '_genes_index_DB', 'TFs')
     def __init__(self, adata, specis = 'Human'): 
         if not ('raw' and 'log1p' in adata.layers.keys()):
-            raise NameError('require adata with count and normalized layers named \'raw\' and \'log1p\'')
+            raise IndexError('require adata with count and normalized layers named \'raw\' and \'log1p\'')
         else:
             self.genes = adata.var_names
             self.LRs = self.LR_DB(specis = specis)
@@ -43,7 +43,7 @@ class Xct_metrics():
         elif specis == 'Human':
             pass
         else:
-            raise NameError('Current ligand/receptor DB only supports \'Mouse\' and \'Human\'')      
+            raise KeyError('Current ligand/receptor DB only supports \'Mouse\' and \'Human\'')      
         del LR
 
         return LR_toUse
@@ -56,7 +56,7 @@ class Xct_metrics():
         elif specis == 'Human':
             pass
         else:
-            raise NameError('Current transcript factor DB only supports \'Mouse\' and \'Human\'')  
+            raise KeyError('Current transcript factor DB only supports \'Mouse\' and \'Human\'')  
         return TFs   
     
     def subset(self):
@@ -206,7 +206,7 @@ class Xct(Xct_metrics):
         self._metric_names = ['mean', 'var', 'disp', 'cv', 'cv_res']
 
         if not ('ident' in adata.obs.keys()):
-            raise NameError('require adata with cell labels saved in \'ident\'')
+            raise IndexError('require adata with cell labels saved in \'ident\'')
         else:
             ada_A = adata[adata.obs['ident'] == CellA, :].copy()
             ada_B = adata[adata.obs['ident'] == CellB, :].copy()
@@ -371,7 +371,7 @@ class Xct(Xct_metrics):
             return w
 
         if queryDB not in ['full', 'comb', 'pairs']:
-            raise NameError('queryDB using the keyword \'full\', \'comb\' or \'pairs\'')
+            raise KeyError('queryDB using the keyword \'full\', \'comb\' or \'pairs\'')
         elif queryDB == 'full':
             pass
         elif queryDB == 'comb':
@@ -436,8 +436,7 @@ def get_counts_np(*objects):
 
 
 def plot_nn_loss(losses):
-    '''manifold alignment by neural network'''
-    #projections, losses = dNN.train_and_project(counts_np, w=self._w, dim=2, steps=1000, lr=0.001)
+    '''plot loss every 100 steps'''
     plt.figure(figsize=(6, 5), dpi=80)
     plt.plot(np.arange(len(losses))*100, losses)
     #plt.savefig('fig.png', dpi=80)
@@ -482,15 +481,16 @@ def nn_aligned_dist(object, projections, rank = True):
 
 
 def filtered_nn_aligned_dist(df_nn, candidates):
-    '''output info of only L-R pairs'''
+    '''filter to only L-R pairs'''
     df_nn_filtered = df_nn.loc[candidates].sort_values(by=['rank']) #dist ranked L-R candidates
     print('manifold aligned # of L-R pairs:', len(df_nn_filtered))
     df_nn_filtered['rank_filtered'] = np.arange(len(df_nn_filtered)) + 1
 
     return df_nn_filtered
 
+
 def build_W(*objects):
-    '''build a cross-object corresponding matrix for differential analysis'''
+    '''build a cross-object corresponding matrix for further differential analysis'''
     W12 = np.zeros((objects[0]._w.shape[0], objects[1]._w.shape[1]), float)
 
     mu = 0.9
@@ -516,7 +516,7 @@ def nn_aligned_dist_diff(df_nn1, df_nn2):
 def chi2_test(df_nn, df = 3, pval = 0.05, FDR = True, candidates = None): #input all pairs (df_nn) for chi-sqaure and FDR on significant
     '''chi-sqaure left tail test to have enriched pairs'''
     if ('dist' and 'rank') not in df_nn.columns:
-        raise NameError('require resulted dataframe with column \'dist\' and \'rank\'') 
+        raise IndexError('require resulted dataframe with column \'dist\' and \'rank\'') 
     else:
             # keys = ['diff', 'diff_rank']
             # keys = ['dist', 'rank']
@@ -542,7 +542,7 @@ def chi2_test(df_nn, df = 3, pval = 0.05, FDR = True, candidates = None): #input
 
           
 def chi2_diff_test(df_nn, df = 2, pval = 0.05, FDR = False, candidates = None): #input all pairs (df_nn) for chi-sqaure and FDR on significant
-    '''chi-sqaure left tail test to have enriched pairs'''
+    '''chi-sqaure right tail test to have pairs with significant distance difference'''
     if ('diff' and 'diff_rank') in df_nn.columns:
         #dist2 = np.square(np.asarray(df_nn['diff']))
         dist_mean = np.mean(df_nn['diff'])
@@ -565,7 +565,7 @@ def chi2_diff_test(df_nn, df = 2, pval = 0.05, FDR = False, candidates = None): 
         return df_enriched
     
     else:
-        raise NameError('require resulted dataframe with column \'diff\' and \'diff_rank\'') 
+        raise IndexError('require resulted dataframe with column \'diff\' and \'diff_rank\'') 
 
 
 if __name__ == '__main__':
