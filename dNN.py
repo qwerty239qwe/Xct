@@ -21,10 +21,12 @@ class Net(nn.Module):
         y_pred = self.linear3(h2_sigmoid)
         return y_pred
 
-def train_and_project(counts_np, w, dim = 2, steps = 1000, lr = 0.001, layers = None):
-    '''manifold alignment by neural network
+def train_and_project(counts_np, w, dim = 2, steps = 1000, lr = 0.001, layers = None, verbose = True):
+    '''manifold alignment by neural network:
         counts_np: list of counts in numpy array, gene by cell;
-        w: correspondence'''
+        w: correspondence;
+        dim: dimension of latent space projected to;
+        layers: node numbers of three layers'''
     if not all(isinstance(x_np, np.ndarray) for x_np in counts_np):
         raise TypeError('input a list of counts in numpy arrays with genes by cells')
     if not sum([x_np.shape[0] for x_np in counts_np]) == w.shape[0]:
@@ -47,8 +49,9 @@ def train_and_project(counts_np, w, dim = 2, steps = 1000, lr = 0.001, layers = 
     torch.manual_seed(0)
 
     for i in range(1, n+1):
-        d[f'model_{i}'] = Net(counts_np[i-1].shape[1], d[f'layers_{i}'][0], d[f'layers_{i}'][1], d[f'layers_{i}'][2])
-        print(d[f'model_{i}'])
+        d[f'model_{i}'] = Net(counts_np[i-1].shape[1], *d[f'layers_{i}'])
+        if verbose:
+            print(d[f'model_{i}'])
         d[f'x_{i}'] = torch.from_numpy(counts_np[i-1].astype(np.float32))
 
     L_np = scipy.sparse.csgraph.laplacian(w, normed = False) 
@@ -70,11 +73,12 @@ def train_and_project(counts_np, w, dim = 2, steps = 1000, lr = 0.001, layers = 
         u, s, v = torch.svd(outputs, some=True)
         proj_outputs = u@v.t()
         
-        # Compute and print loss
+        # Compute loss
         loss = torch.trace(proj_outputs.t()@L@proj_outputs)
         
         if t == 0 or t%100 == 99:
-            print(t+1, loss.item())
+            if verbose:
+                print(t+1, loss.item())
             losses.append(loss.item())
 
         # Zero gradients, perform a backward pass, and update the weights.

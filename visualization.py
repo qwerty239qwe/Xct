@@ -88,8 +88,9 @@ def plot_pcNet(Xct_obj, view, target, top_edges = 20, show = True, saveas = None
             return g
 
 
-def plot_XNet(g1, g2, Xct_pair = None, saveas = None, verbose = False, visual_style = visual_style):
-    '''visualize merged GRN from sender and receiver cell types'''
+def plot_XNet(g1, g2, Xct_pair = None, saveas = None, verbose = False, scale = None, visual_style = visual_style):
+    '''visualize merged GRN from sender and receiver cell types,
+        use scale to make two graphs width comparable'''
     g = g1.disjoint_union(g2) #merge disjointly
     if verbose:   
             print(f'merged graphs: \n# of nodes: {len(g.vs)}, # of edges: {len(g.es)}')
@@ -105,7 +106,8 @@ def plot_XNet(g1, g2, Xct_pair = None, saveas = None, verbose = False, visual_st
     visual_style["vertex_color"] = ['darkgray' if tf==1 else 'darkorange' for tf in g.vs["is_TF"]]
     visual_style["vertex_shape"] = ['circle' if tf==1 else 'square' for tf in g.vs["is_TF"]]
 
-    scale = 3/max(np.abs(g.es['weight']))
+    if scale is None:
+        scale = 3/max(np.abs(g.es['weight']))
     visual_style["edge_width"] = [scale*abs(w) for w in g.es['weight']] 
     visual_style["edge_color"] = ['red' if (w>0)&(w<=1) else ('maroon' if w>1 else 'blue') for w in g.es['weight']]
     visual_style["layout"] = 'kk'

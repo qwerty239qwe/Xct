@@ -309,11 +309,6 @@ class Xct(Xct_metrics):
             print('Selected {} LR pairs'.format(df.shape[0]))
 
         return df
-
-    def get_candidates(self, df_filtered):
-        '''selected L-R candidates'''
-        candidates = [a+'_'+b for a, b in zip(np.asarray(df_filtered['ligand'],dtype=str), np.asarray(df_filtered['receptor'],dtype=str))]
-        return candidates
     
     
     def score(self, ref_DB = None, method = 0, a = 1):
@@ -395,6 +390,12 @@ class Xct(Xct_metrics):
         self._net_A = pd.DataFrame(self._net_A, columns = self.genes_names[0], index = self.genes_names[0])
         self._net_B = pd.DataFrame(self._net_B, columns = self.genes_names[1], index = self.genes_names[1])
         print('completed.')
+
+
+def get_candidates(df_filtered):
+    '''selected L-R candidates'''
+    candidates = [a+'_'+b for a, b in zip(np.asarray(df_filtered['ligand'],dtype=str), np.asarray(df_filtered['receptor'],dtype=str))]
+    return candidates
 
 
 def scores(adata, ref_obj, method = 0, a = 1, n = 100):
@@ -547,7 +548,7 @@ def chi2_diff_test(df_nn, df = 2, pval = 0.05, FDR = False, candidates = None): 
         #dist2 = np.square(np.asarray(df_nn['diff']))
         dist_mean = np.mean(df_nn['diff'])
         FC = np.asarray(df_nn['diff']) / dist_mean
-        p = 1- scipy.stats.chi2.cdf(FC, df = df) #left tail CDF    ???
+        p = 1- scipy.stats.chi2.cdf(FC, df = df) # 1- left tail CDF 
         if FDR:
             from statsmodels.stats.multitest import multipletests
             rej, p, _, _ = multipletests(pvals = p, alpha = pval, method = 'fdr_bh')
