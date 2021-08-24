@@ -195,7 +195,7 @@ class Xct_metrics():
       
 class Xct(Xct_metrics):
 
-    def __init__(self, adata, CellA, CellB, pmt = False, build_GRN = False, save_GRN = False, pcNet_name = 'pcNet', mode = None, verbose = False): 
+    def __init__(self, adata, CellA, CellB, pmt = False, build_GRN = False, save_GRN = False, pcNet_name = 'pcNet', alpha = 0.55, mode = None, verbose = False): 
         '''build_GRN: if True to build GRN thru pcNet, if False to load built GRN files;
             save_GRN: save constructed 2 pcNet;
             pcNet_name: name of GRN (.csv) files, read/write;
@@ -244,7 +244,7 @@ class Xct(Xct_metrics):
                 print('require pcNet_name where csv files saved in with tab as delimiter')
         if verbose:
             print('building correspondence...')
-        self._w = self._build_w(queryDB = mode, scale = True) 
+        self._w = self._build_w(alpha = alpha, queryDB = mode, scale_w = True) 
         if verbose:
             print('init completed.')      
         del ada_A, ada_B
@@ -337,13 +337,13 @@ class Xct(Xct_metrics):
 
         return S #.astype(float)
 
-    def _build_w(self, queryDB = 'full', scale = True, mu = 1): 
-        '''build w: 3 modes, if 'full' will use all the corresponding scores'''
-        # u + var^2
+    def _build_w(self, alpha, queryDB = 'full', scale_w = True): 
+        '''build w: 3 modes, if 'full' will use all pair-wise corresponding scores'''
+        # (1-a)*u^2 + a*var
         # metric_A_temp = (np.square(self._metric_A[0]) + self._metric_A[1])[:, None] 
         # metric_B_temp = (np.square(self._metric_B[0]) + self._metric_B[1])[None, :] 
-        metric_A_temp = (self._metric_A[0] + np.square(self._metric_A[1]))[:, None] 
-        metric_B_temp = (self._metric_B[0] + np.square(self._metric_B[1]))[None, :] 
+        metric_A_temp = ((1-alpha)* np.square(self._metric_A[0]) + alpha* (self._metric_A[1]))[:, None] 
+        metric_B_temp = ((1-alpha)* np.square(self._metric_B[0]) + alpha* (self._metric_B[1]))[None, :] 
         #print(metric_A_temp.shape, metric_B_temp.shape)
         w12 = metric_A_temp@metric_B_temp
         w12_orig = w12.copy()
@@ -378,7 +378,8 @@ class Xct(Xct_metrics):
             LR_idx_toUse = self._genes_index_DB[(self._genes_index_DB[:, 0] > 0) & (self._genes_index_DB[:, 1] > 0)]
             w12 = zero_out_w(w12, LR_idx_toUse)
 
-        if scale:
+        if scale_w:
+            mu = 1
             w12 = mu * ((self._net_A+1).sum() + (self._net_B+1).sum()) / (2 * w12_orig.sum()) * w12 #scale factor using w12_orig
 
         w = np.block([[self._net_A+1, w12],
@@ -387,6 +388,7 @@ class Xct(Xct_metrics):
         return w
     
     def add_names_to_nets(self):
+        '''for graph visualization'''
         self._net_A = pd.DataFrame(self._net_A, columns = self.genes_names[0], index = self.genes_names[0])
         self._net_B = pd.DataFrame(self._net_B, columns = self.genes_names[1], index = self.genes_names[1])
         print('completed.')
@@ -567,6 +569,15 @@ def chi2_diff_test(df_nn, df = 2, pval = 0.05, FDR = False, candidates = None): 
     
     else:
         raise IndexError('require resulted dataframe with column \'diff\' and \'diff_rank\'') 
+
+def get_genelist(df_enriched, saveas = None):
+    '''get a list of single genes from enriched pairs'''
+    targets = np.ravel([n.split('_') for n in list(df_enriched.index)]).tolist()
+    if saveas is not None:
+        with open(f'{saveas}.txt', 'w') as file:
+            for g in targets:
+                file.write(g + '\n') 
+    return targets
 
 
 if __name__ == '__main__':

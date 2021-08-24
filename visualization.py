@@ -7,37 +7,38 @@ import warnings
 def get_Xct_pairs(df):
     return tuple(n.split('_') for n in list(df.index))
 
-visual_style = {}
-visual_style["vertex_size"] = 40
-visual_style["vertex_label_size"] = 12
-visual_style["vertex_label_dist"] = 0.0
+visual_style_common = {}
+visual_style_common["vertex_size"] = 50
+visual_style_common["vertex_label_size"] = 12
+visual_style_common["vertex_label_dist"] = 0.0
+visual_style_common["edge_curved"] = 0.1
+# visual_style_common["edge_arrow_size"] = 1
+# visual_style_common["edge_arrow_width"] = 0.3
+visual_style_common["margin"] = 40
 
-visual_style["edge_curved"] = 0.1
-# visual_style["edge_arrow_size"] = 1
-# visual_style["edge_arrow_width"] = 0.3
-visual_style["bbox"] = (512, 512)
-visual_style["margin"] = 30
-
-def plot_pcNet(Xct_obj, view, target, top_edges = 20, show = True, saveas = None, verbose = False, visual_style = visual_style):
+def plot_pcNet(Xct_obj, view, gene_names, top_edges = 20, show = True, saveas = None, verbose = False, visual_style = visual_style_common.copy()):
     '''visualize single cell type GRN, only showing direct edges associated with target genes'''
     if view == 'sender':
         net = Xct_obj._net_A
     elif view == 'receiver':
         net = Xct_obj._net_B
+    else:
+        raise KeyError('view \'sender\' or \'receiver\'')
+
     if not isinstance(net, pd.DataFrame):
         raise TypeError('convert GRN to dataframe with gene names first')
     else:
         g_to_use = Xct_obj.TFs['TF_symbol'].tolist()
         g_to_use_orig = g_to_use.copy()
-        g_to_use = g_to_use + target
+        g_to_use = g_to_use + gene_names
       
         net_f = net.loc[net.index.isin(g_to_use), net.columns.isin(g_to_use)].copy() #subset net by TFs and LRs
         net_f.loc[net_f.index.isin(g_to_use_orig), net_f.columns.isin(g_to_use_orig)] = 0 # set !LR row and col = 0, as not interested
         net_f.astype('float64')
         if verbose:
-            print(f'identified {len(net_f)} TF(s) along with {len(target)} ligand/receptor target(s)')
+            print(f'identified {len(net_f)} TF(s) along with {len(gene_names)} ligand/receptor target gene(s)')
         
-        idx_target = [list(net_f.index).index(g) for g in target]
+        idx_target = [list(net_f.index).index(g) for g in gene_names]
         is_TF = np.ones(len(net_f), dtype=bool)
         for idx in idx_target:
             is_TF[idx] = False 
@@ -59,7 +60,7 @@ def plot_pcNet(Xct_obj, view, target, top_edges = 20, show = True, saveas = None
         for v in g.vs: 
             if v.degree() == 0:
                 to_delete_ids.append(v.index) 
-                if v['name'] in target:
+                if v['name'] in gene_names:
                     warnings.warn(f"{v['name']} has been removed due to degree equals to zero")
         g.delete_vertices(to_delete_ids)
 
@@ -67,6 +68,7 @@ def plot_pcNet(Xct_obj, view, target, top_edges = 20, show = True, saveas = None
             print(f'undirected graph constructed: \n# of nodes: {len(g.vs)}, # of edges: {len(g.es)}')
          
         #graph-specific visual_style after graph building
+        visual_style["bbox"] = (512, 512)
         visual_style["vertex_label"] = g.vs["name"]
         visual_style["vertex_color"] = ['darkgray' if tf==1 else 'darkorange' for tf in g.vs["is_TF"]]
         visual_style["vertex_shape"] = ['circle' if tf==1 else 'square' for tf in g.vs["is_TF"]]
@@ -88,7 +90,7 @@ def plot_pcNet(Xct_obj, view, target, top_edges = 20, show = True, saveas = None
             return g
 
 
-def plot_XNet(g1, g2, Xct_pair = None, saveas = None, verbose = False, scale = None, visual_style = visual_style):
+def plot_XNet(g1, g2, Xct_pair = None, saveas = None, verbose = False, scale = None, visual_style = visual_style_common.copy()):
     '''visualize merged GRN from sender and receiver cell types,
         use scale to make two graphs width comparable'''
     g = g1.disjoint_union(g2) #merge disjointly
