@@ -16,7 +16,7 @@ visual_style_common["edge_curved"] = 0.1
 # visual_style_common["edge_arrow_width"] = 0.3
 visual_style_common["margin"] = 50
 
-def plot_pcNet(Xct_obj, view, gene_names, top_edges = 20, show = True, saveas = None, verbose = False, visual_style = visual_style_common.copy()):
+def plot_pcNet(Xct_obj, view, gene_names, top_edges = 20, show = True, saveas = None, verbose = False, scale = None, visual_style = visual_style_common.copy()):
     '''visualize single cell type GRN, only showing direct edges associated with target genes'''
     if view == 'sender':
         net = Xct_obj._net_A
@@ -75,8 +75,8 @@ def plot_pcNet(Xct_obj, view, gene_names, top_edges = 20, show = True, saveas = 
         visual_style["vertex_label"] = g.vs["name"]
         visual_style["vertex_color"] = ['darkgray' if tf==1 else 'darkorange' for tf in g.vs["is_TF"]]
         visual_style["vertex_shape"] = ['circle' if tf==1 else 'square' for tf in g.vs["is_TF"]]
-        
-        scale = 3/max(np.abs(g.es['weight']))
+        if scale is None:
+            scale = 3/max(np.abs(g.es['weight']))
         visual_style["edge_width"] = [scale*abs(w) for w in g.es['weight']] 
         visual_style["edge_color"] = ['red' if w>0 else 'blue' for w in g.es['weight']]
         visual_style["layout"] = 'large'
@@ -102,7 +102,7 @@ def plot_XNet(g1, g2, Xct_pair = None, saveas = None, verbose = False, scale = N
 
     for pair in Xct_pair:
         edges_idx = (gg.vs.find(name = pair[0]).index, gg.vs.find(name = pair[1]).index) #from to
-        gg.add_edge(edges_idx[0], edges_idx[1], weight = 1.1) #weight > 1 and be the max
+        gg.add_edge(edges_idx[0], edges_idx[1], weight = 1.02) #weight > 1 and be the max
         if verbose:
             print(f'edge from {pair[0]} to {pair[1]} added')
     
