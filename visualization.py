@@ -14,7 +14,7 @@ visual_style_common["vertex_label_dist"] = 0.0
 visual_style_common["edge_curved"] = 0.1
 # visual_style_common["edge_arrow_size"] = 1
 # visual_style_common["edge_arrow_width"] = 0.3
-visual_style_common["margin"] = 40
+visual_style_common["margin"] = 50
 
 def plot_pcNet(Xct_obj, view, gene_names, top_edges = 20, show = True, saveas = None, verbose = False, visual_style = visual_style_common.copy()):
     '''visualize single cell type GRN, only showing direct edges associated with target genes'''
@@ -50,6 +50,9 @@ def plot_pcNet(Xct_obj, view, gene_names, top_edges = 20, show = True, saveas = 
         g.vs["name"] = gene_names_f
         g.vs["is_TF"] = is_TF
         
+        if len(g.es) == 0:
+            gene_names = ' '.join(map(str, gene_names)) #string
+            raise ValueError(f'target gene {gene_names} generated 0 edge, stoped...')
         #trim low weight edges
         abs_weight = [abs(w) for w in g.es['weight']]
         edges_delete_ids = sorted(range(len(abs_weight)), key=lambda k: abs_weight[k])[:-top_edges] #idx from bottom
@@ -61,11 +64,11 @@ def plot_pcNet(Xct_obj, view, gene_names, top_edges = 20, show = True, saveas = 
             if v.degree() == 0:
                 to_delete_ids.append(v.index) 
                 if v['name'] in gene_names:
-                    warnings.warn(f"{v['name']} has been removed due to degree equals to zero")
+                    warnings.warn(f"{v['name']} has been removed due to degree equals to zero among top weighted edges")
         g.delete_vertices(to_delete_ids)
 
         if verbose:   
-            print(f'undirected graph constructed: \n# of nodes: {len(g.vs)}, # of edges: {len(g.es)}')
+            print(f'undirected graph constructed: \n# of nodes: {len(g.vs)}, # of edges: {len(g.es)}\n')
          
         #graph-specific visual_style after graph building
         visual_style["bbox"] = (512, 512)
@@ -93,32 +96,32 @@ def plot_pcNet(Xct_obj, view, gene_names, top_edges = 20, show = True, saveas = 
 def plot_XNet(g1, g2, Xct_pair = None, saveas = None, verbose = False, scale = None, visual_style = visual_style_common.copy()):
     '''visualize merged GRN from sender and receiver cell types,
         use scale to make two graphs width comparable'''
-    g = g1.disjoint_union(g2) #merge disjointly
+    gg = g1.disjoint_union(g2) #merge disjointly
     if verbose:   
-            print(f'merged graphs: \n# of nodes: {len(g.vs)}, # of edges: {len(g.es)}')
+            print(f'graphs merged: \n# of nodes: {len(gg.vs)}, # of edges: {len(gg.es)}\n')
 
     for pair in Xct_pair:
-        edges_idx = (g.vs.find(name = pair[0]).index, g.vs.find(name = pair[1]).index) #from to
-        g.add_edge(edges_idx[0], edges_idx[1], weight = 1.1) #weight > 1 and be the max
+        edges_idx = (gg.vs.find(name = pair[0]).index, gg.vs.find(name = pair[1]).index) #from to
+        gg.add_edge(edges_idx[0], edges_idx[1], weight = 1.1) #weight > 1 and be the max
         if verbose:
             print(f'edge from {pair[0]} to {pair[1]} added')
     
     visual_style["bbox"] = (768, 768)
-    visual_style["vertex_label"] = g.vs["name"]
-    visual_style["vertex_color"] = ['darkgray' if tf==1 else 'darkorange' for tf in g.vs["is_TF"]]
-    visual_style["vertex_shape"] = ['circle' if tf==1 else 'square' for tf in g.vs["is_TF"]]
+    visual_style["vertex_label"] = gg.vs["name"]
+    visual_style["vertex_color"] = ['darkgray' if tf==1 else 'darkorange' for tf in gg.vs["is_TF"]]
+    visual_style["vertex_shape"] = ['circle' if tf==1 else 'square' for tf in gg.vs["is_TF"]]
 
     if scale is None:
-        scale = 3/max(np.abs(g.es['weight']))
-    visual_style["edge_width"] = [scale*abs(w) for w in g.es['weight']] 
-    visual_style["edge_color"] = ['red' if (w>0)&(w<=1) else ('maroon' if w>1 else 'blue') for w in g.es['weight']]
+        scale = 3/max(np.abs(gg.es['weight']))
+    visual_style["edge_width"] = [scale*abs(w) for w in gg.es['weight']] 
+    visual_style["edge_color"] = ['red' if (w>0)&(w<=1) else ('maroon' if w>1 else 'blue') for w in gg.es['weight']]
     visual_style["layout"] = 'kk'
     visual_style["mark_groups"] = [(list(range(0, len(g1.vs))), "whitesmoke")] + [(list(range(len(g1.vs), len(g1.vs)+len(g2.vs))), "whitesmoke")]
  
     random.seed(42) #layout
     if saveas is None:
-        return ig.plot(g, **visual_style)
+        return ig.plot(gg, **visual_style)
     else:
         if verbose:
             print(f'graph saved as \"{saveas}.png\"')
-        return ig.plot(g, f'{saveas}.png', **visual_style)
+        return ig.plot(gg, f'{saveas}.png', **visual_style)

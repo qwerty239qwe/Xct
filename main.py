@@ -34,7 +34,7 @@ class Xct_metrics():
     
     def LR_DB(self, specis = 'Human'):
         '''load omnipath DB for L-R pairs'''
-        LR = pd.read_csv('https://raw.githubusercontent.com/yjgeno/Xct/dev2/DB/omnipath_intercell_toUse_v2.csv')
+        LR = pd.read_csv('https://raw.githubusercontent.com/yjgeno/Xct/dev/DB/omnipath_intercell_toUse_v2.csv')
         LR_toUse = LR[['genesymbol_intercell_source', 'genesymbol_intercell_target']]
         LR_toUse.columns = ['ligand', 'receptor']
         if specis == 'Mouse':
@@ -50,7 +50,7 @@ class Xct_metrics():
 
     def TF_DB(self, specis = 'Human'):
         '''load TFome DB for TFs'''
-        TFs = pd.read_csv('https://raw.githubusercontent.com/yjgeno/Xct/dev2/DB/41587_2020_742_MOESM3_ESM.csv', header=None, names=['TF_symbol'])
+        TFs = pd.read_csv('https://raw.githubusercontent.com/yjgeno/Xct/dev/DB/41587_2020_742_MOESM3_ESM.csv', header=None, names=['TF_symbol'])
         if specis == 'Mouse':
             TFs['TF_symbol'].str.capitalize() 
         elif specis == 'Human':
@@ -572,7 +572,8 @@ def chi2_diff_test(df_nn, df = 2, pval = 0.05, FDR = False, candidates = None): 
 
 def get_genelist(df_enriched, saveas = None):
     '''get a list of single genes from enriched pairs'''
-    targets = np.ravel([n.split('_') for n in list(df_enriched.index)]).tolist()
+    targets = np.ravel([n.split('_') for n in df_enriched.index]) #.tolist()
+    targets = list(set(targets))
     if saveas is not None:
         with open(f'{saveas}.txt', 'w') as file:
             for g in targets:
