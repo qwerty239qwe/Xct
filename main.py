@@ -21,42 +21,43 @@ except ImportError:
 
 class Xct_metrics():
     '''require adata with layer 'raw' (counts) and 'log1p' (normalized), cell labels in obs 'ident' '''
-    __slots__ = ('genes', 'LRs', '_genes_index_DB', 'TFs')
+    __slots__ = ('_specis', 'genes', 'LRs', '_genes_index_DB', 'TFs')
     def __init__(self, adata, specis = 'Human'): 
         if not ('raw' and 'log1p' in adata.layers.keys()):
             raise IndexError('require adata with count and normalized layers named \'raw\' and \'log1p\'')
         else:
+            self._specis = specis
             self.genes = adata.var_names
-            self.LRs = self.LR_DB(specis = specis)
+            self.LRs = self.LR_DB()
             self._genes_index_DB = self.get_index(DB = self.LRs)
-            self.TFs = self.TF_DB(specis = specis)
+            self.TFs = self.TF_DB()
 
     
-    def LR_DB(self, specis = 'Human'):
+    def LR_DB(self):
         '''load omnipath DB for L-R pairs'''
         LR = pd.read_csv('https://raw.githubusercontent.com/yjgeno/Xct/dev/DB/omnipath_intercell_toUse_v2.csv')
         LR_toUse = LR[['genesymbol_intercell_source', 'genesymbol_intercell_target']]
         LR_toUse.columns = ['ligand', 'receptor']
-        if specis == 'Mouse':
+        if self._specis == 'Mouse':
             for col in LR_toUse.columns:
-                LR_toUse[col].str.capitalize()        
-        elif specis == 'Human':
+                LR_toUse[col] = LR_toUse[col].str.capitalize()        
+        elif self._specis == 'Human':
             pass
         else:
-            raise KeyError('Current ligand/receptor DB only supports \'Mouse\' and \'Human\'')      
+            raise KeyError('current ligand/receptor DB only supports \'Mouse\' and \'Human\'')      
         del LR
 
         return LR_toUse
 
-    def TF_DB(self, specis = 'Human'):
+    def TF_DB(self):
         '''load TFome DB for TFs'''
         TFs = pd.read_csv('https://raw.githubusercontent.com/yjgeno/Xct/dev/DB/41587_2020_742_MOESM3_ESM.csv', header=None, names=['TF_symbol'])
-        if specis == 'Mouse':
-            TFs['TF_symbol'].str.capitalize() 
-        elif specis == 'Human':
+        if self._specis == 'Mouse':
+            TFs['TF_symbol'] = TFs['TF_symbol'].str.capitalize() 
+        elif self._specis == 'Human':
             pass
         else:
-            raise KeyError('Current transcript factor DB only supports \'Mouse\' and \'Human\'')  
+            raise KeyError('current transcript factor DB only supports \'Mouse\' and \'Human\'')  
         return TFs   
     
     def subset(self):
@@ -87,7 +88,7 @@ class Xct_metrics():
 
     def get_metric(self, adata, verbose = False): #require normalized data
         '''compute metrics for each gene'''
-        data_norm = scipy.sparse.csr_matrix.toarray(adata.X) if scipy.sparse.issparse(adata.X) else adata.X
+        data_norm = adata.X.toarray() if scipy.sparse.issparse(adata.X) else adata.X #adata.layers['log1p']
         if verbose:
             print('(cell, feature):', data_norm.shape)
         
@@ -104,7 +105,7 @@ class Xct_metrics():
     
     def chen2016_fit(self, adata, plot = False, verbose = False): #require raw data 
         '''NB model fit mean vs CV'''
-        data_raw = adata.layers['raw'] #.copy()
+        data_raw = adata.layers['raw'].toarray() if scipy.sparse.issparse(adata.layers['raw']) else adata.layers['raw'] #.copy()
         if (data_raw % 1 != 0).any():
             raise ValueError("require counts (int) data")
         else:
@@ -195,13 +196,13 @@ class Xct_metrics():
       
 class Xct(Xct_metrics):
 
-    def __init__(self, adata, CellA, CellB, pmt = False, build_GRN = False, save_GRN = False, pcNet_name = 'pcNet', alpha = 0.55, mode = None, verbose = False): 
+    def __init__(self, adata, CellA, CellB, specis = 'Human', pmt = False, build_GRN = False, save_GRN = False, pcNet_name = 'pcNet', mode = None, verbose = False): 
         '''build_GRN: if True to build GRN thru pcNet, if False to load built GRN files;
             save_GRN: save constructed 2 pcNet;
             pcNet_name: name of GRN (.csv) files, read/write;
             mode: 3 modes to construct correspondence: 'full, 'comb', 'pairs'
             '''
-        Xct_metrics.__init__(self, adata)
+        Xct_metrics.__init__(self, adata, specis = specis)
         self._cell_names = CellA, CellB
         self._metric_names = ['mean', 'var', 'disp', 'cv', 'cv_res']
 
@@ -244,7 +245,7 @@ class Xct(Xct_metrics):
                 print('require pcNet_name where csv files saved in with tab as delimiter')
         if verbose:
             print('building correspondence...')
-        self._w = self._build_w(alpha = alpha, queryDB = mode, scale_w = True) 
+        self._w = self._build_w(alpha = 0.55, queryDB = mode, scale_w = True) 
         if verbose:
             print('init completed.')      
         del ada_A, ada_B
@@ -509,9 +510,9 @@ def build_W(*objects):
 def nn_aligned_dist_diff(df_nn1, df_nn2):
     '''pair-wise difference of aligned distance'''
     df_nn_all = pd.concat([df_nn1, df_nn2], axis=1) 
-    df_nn_all['diff'] = np.square(df_nn_all['dist'].iloc[:, 0] - df_nn_all['dist'].iloc[:, 1]) #df with same colnames
-    df_nn_all = df_nn_all.sort_values(by=['diff'], ascending=False)
-    df_nn_all['diff_rank'] = np.arange(len(df_nn_all)) + 1
+    df_nn_all['diff2'] = np.square(df_nn_all['dist'].iloc[:, 0] - df_nn_all['dist'].iloc[:, 1]) #there are two 'dist' cols
+    df_nn_all = df_nn_all.sort_values(by=['diff2'], ascending=False)
+    df_nn_all['diff2_rank'] = np.arange(len(df_nn_all)) + 1
 
     return df_nn_all
 
@@ -521,7 +522,7 @@ def chi2_test(df_nn, df = 3, pval = 0.05, FDR = True, candidates = None): #input
     if ('dist' and 'rank') not in df_nn.columns:
         raise IndexError('require resulted dataframe with column \'dist\' and \'rank\'') 
     else:
-            # keys = ['diff', 'diff_rank']
+            # keys = ['diff2', 'diff2_rank']
             # keys = ['dist', 'rank']
         dist2 = np.square(np.asarray(df_nn['dist']))
         dist_mean = np.mean(dist2)
@@ -546,29 +547,29 @@ def chi2_test(df_nn, df = 3, pval = 0.05, FDR = True, candidates = None): #input
           
 def chi2_diff_test(df_nn, df = 2, pval = 0.05, FDR = False, candidates = None): #input all pairs (df_nn) for chi-sqaure and FDR on significant
     '''chi-sqaure right tail test to have pairs with significant distance difference'''
-    if ('diff' and 'diff_rank') in df_nn.columns:
+    if ('diff2' and 'diff2_rank') in df_nn.columns:
         #dist2 = np.square(np.asarray(df_nn['diff']))
-        dist_mean = np.mean(df_nn['diff'])
-        FC = np.asarray(df_nn['diff']) / dist_mean
+        dist_mean = np.mean(df_nn['diff2'])
+        FC = np.asarray(df_nn['diff2']) / dist_mean
         p = 1- scipy.stats.chi2.cdf(FC, df = df) # 1- left tail CDF 
         if FDR:
             from statsmodels.stats.multitest import multipletests
             rej, p, _, _ = multipletests(pvals = p, alpha = pval, method = 'fdr_bh')
             
         df_nn['p_val'] = p
-        df_enriched = df_nn[df_nn['p_val'] < pval].sort_values(by=['diff_rank'])
+        df_enriched = df_nn[df_nn['p_val'] < pval].sort_values(by=['diff2_rank'])
         if FDR:
             df_enriched.rename({'p_val': 'q_val'}, axis=1, inplace=True)
         if candidates is not None: #filter LR pairs among enriched pairs
             overlap = set(candidates).intersection(set(df_enriched.index))
-            df_enriched = df_enriched.loc[overlap].sort_values(by=['diff_rank'])
+            df_enriched = df_enriched.loc[overlap].sort_values(by=['diff2_rank'])
             df_enriched['enriched_rank'] = np.arange(len(df_enriched)) + 1
         print(f'\nTotal enriched: {len(df_enriched)} / {len(df_nn)}')
 
         return df_enriched
     
     else:
-        raise IndexError('require resulted dataframe with column \'diff\' and \'diff_rank\'') 
+        raise IndexError('require resulted dataframe with column \'diff2\' and \'diff2_rank\'') 
 
 def get_genelist(df_enriched, saveas = None):
     '''get a list of single genes from enriched pairs'''

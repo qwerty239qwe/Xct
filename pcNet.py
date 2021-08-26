@@ -4,9 +4,9 @@ import scipy
 
 
 def pcNet(X, nComp = 3, scale = True, symmetric = False, q = 0): # X: cell * gene, q: 0-100
-    X = scipy.sparse.csr_matrix.toarray(X) if scipy.sparse.issparse(X) else X
+    X = X.toarray() if scipy.sparse.issparse(X) else X
     if not isinstance(X, np.ndarray):
-        raise ValueError('Input should be a numpy array with cells as rows and genes as columns')
+        raise TypeError('input a numpy array with cells as rows and genes as columns')
     elif nComp < 2 or nComp >= X.shape[1]:
         raise ValueError('nComp should be greater or equal than 2 and lower than the total number of genes')
     
