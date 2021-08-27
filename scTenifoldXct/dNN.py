@@ -1,6 +1,6 @@
 import numpy as np
 import scipy
-from stiefel import *
+from scTenifoldXct.stiefel import *
 import itertools
 import torch
 import torch.nn as nn

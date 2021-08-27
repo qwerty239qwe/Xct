@@ -10,13 +10,9 @@ warnings.filterwarnings("ignore")
 sc.settings.verbosity = 0
 
 try:
-    from sys import path as syspath
-    from os import path as ospath
-    syspath.append(ospath.join(ospath.expanduser("~"), './'))
-    
-    from pcNet import pcNet
+    from scTenifoldXct import pcNet
 except ImportError:
-    print('Module not found')
+    print('module \'pcNet\' not found')
 
 
 class Xct_metrics():
@@ -233,14 +229,14 @@ class Xct(Xct_metrics):
             if verbose:
                 print('GRN of Cell B has been built, building correspondence...')
             if save_GRN:
-                np.savetxt(f'data/{pcNet_name}_A.csv', self._net_A, delimiter="\t")
-                np.savetxt(f'data/{pcNet_name}_B.csv', self._net_B, delimiter="\t")
+                np.savetxt(f'../data/{pcNet_name}_A.csv', self._net_A, delimiter="\t")
+                np.savetxt(f'../data/{pcNet_name}_B.csv', self._net_B, delimiter="\t")
         else:
             try:
                 if verbose:
                     print('loading GRNs...')
-                self._net_A = np.genfromtxt(f'data/{pcNet_name}_A.csv', delimiter="\t")
-                self._net_B = np.genfromtxt(f'data/{pcNet_name}_B.csv', delimiter="\t")
+                self._net_A = np.genfromtxt(f'../data/{pcNet_name}_A.csv', delimiter="\t")
+                self._net_B = np.genfromtxt(f'../data/{pcNet_name}_B.csv', delimiter="\t")
             except ImportError:
                 print('require pcNet_name where csv files saved in with tab as delimiter')
         if verbose:
