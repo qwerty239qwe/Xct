@@ -16,7 +16,7 @@ visual_style_common["edge_curved"] = 0.1
 # visual_style_common["edge_arrow_width"] = 0.3
 visual_style_common["margin"] = 50
 
-def plot_pcNet(Xct_obj, view, gene_names, top_edges = 20, show = True, saveas = None, verbose = False, scale = None, visual_style = visual_style_common.copy()):
+def plot_pcNet(Xct_obj, view, gene_names, top_edges = 20, show = True, saveas = None, verbose = False, edge_width_scale = None, visual_style = visual_style_common.copy()):
     '''visualize single cell type GRN, only showing direct edges associated with target genes'''
     if view == 'sender':
         net = Xct_obj._net_A
@@ -75,9 +75,9 @@ def plot_pcNet(Xct_obj, view, gene_names, top_edges = 20, show = True, saveas = 
         visual_style["vertex_label"] = g.vs["name"]
         visual_style["vertex_color"] = ['darkgray' if tf==1 else 'darkorange' for tf in g.vs["is_TF"]]
         visual_style["vertex_shape"] = ['circle' if tf==1 else 'square' for tf in g.vs["is_TF"]]
-        if scale is None:
-            scale = 3/max(np.abs(g.es['weight']))
-        visual_style["edge_width"] = [scale*abs(w) for w in g.es['weight']] 
+        if edge_width_scale is None:
+            edge_width_scale = 3/max(np.abs(g.es['weight']))
+        visual_style["edge_width"] = [edge_width_scale*abs(w) for w in g.es['weight']] 
         visual_style["edge_color"] = ['red' if w>0 else 'blue' for w in g.es['weight']]
         visual_style["layout"] = 'large'
         
@@ -93,9 +93,9 @@ def plot_pcNet(Xct_obj, view, gene_names, top_edges = 20, show = True, saveas = 
             return g
 
 
-def plot_XNet(g1, g2, Xct_pair = None, saveas = None, verbose = False, scale = None, visual_style = visual_style_common.copy()):
+def plot_XNet(g1, g2, Xct_pair = None, saveas = None, verbose = False, edge_width_scale = None, edge_width_max = 5, visual_style = visual_style_common.copy()):
     '''visualize merged GRN from sender and receiver cell types,
-        use scale to make two graphs width comparable'''
+        use edge_width_scale to make two graphs width comparable (both using absolute values)'''
     gg = g1.disjoint_union(g2) #merge disjointly
     if verbose:   
             print(f'graphs merged: \n# of nodes: {len(gg.vs)}, # of edges: {len(gg.es)}\n')
@@ -111,9 +111,9 @@ def plot_XNet(g1, g2, Xct_pair = None, saveas = None, verbose = False, scale = N
     visual_style["vertex_color"] = ['darkgray' if tf==1 else 'darkorange' for tf in gg.vs["is_TF"]]
     visual_style["vertex_shape"] = ['circle' if tf==1 else 'square' for tf in gg.vs["is_TF"]]
 
-    if scale is None:
-        scale = 3/max(np.abs(gg.es['weight']))
-    visual_style["edge_width"] = [scale*abs(w) for w in gg.es['weight']] 
+    if edge_width_scale is None:
+        edge_width_scale = 3/max(np.abs(gg.es['weight']))
+    visual_style["edge_width"] = [edge_width_scale*abs(w) if edge_width_scale*abs(w) < edge_width_max else edge_width_max for w in gg.es['weight']] 
     visual_style["edge_color"] = ['red' if (w>0)&(w<=1) else ('maroon' if w>1 else 'blue') for w in gg.es['weight']]
     visual_style["layout"] = 'kk'
     visual_style["mark_groups"] = [(list(range(0, len(g1.vs))), "whitesmoke")] + [(list(range(len(g1.vs), len(g1.vs)+len(g2.vs))), "whitesmoke")]

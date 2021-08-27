@@ -429,12 +429,12 @@ def pmt_test(orig_score, scores, p = 0.05):
     return enriched_i, pvals, counts
 
 
-def get_counts_np(*objects):
+def get_counts_np(*Xct_objects):
     '''return a list of counts in numpy array, gene by cell'''
-    if not all(isinstance(obj, Xct) for obj in objects):
+    if not all(isinstance(obj, Xct) for obj in Xct_objects):
         raise TypeError('input Xct object(s)')
     else:
-        counts_np = list(itertools.chain(*([obj._X[0].T, obj._X[1].T] for obj in objects))) #gene by cell
+        counts_np = list(itertools.chain(*([obj._X[0].T, obj._X[1].T] for obj in Xct_objects))) #gene by cell
         counts_np = [counts.toarray() if scipy.sparse.issparse(counts) else counts for counts in counts_np]
         return counts_np # a list
 
@@ -447,28 +447,28 @@ def plot_nn_loss(losses):
     plt.show()
 
 
-def _pair_distance(object, projections): #projections: manifold alignment, ndarray
+def _pair_distance(Xct_object, projections): #projections: manifold alignment, ndarray
     '''distances of each pair in latent space'''
     d = {}
-    for i, l in enumerate(object.genes_names[0]):
-        for j, r in enumerate(object.genes_names[1]):
-            d[f'{l}_{r}'] = [(i, j), np.linalg.norm(projections[i, :] - projections[len(object.genes_names[0]) + j, :])]
+    for i, l in enumerate(Xct_object.genes_names[0]):
+        for j, r in enumerate(Xct_object.genes_names[1]):
+            d[f'{l}_{r}'] = [(i, j), np.linalg.norm(projections[i, :] - projections[len(Xct_object.genes_names[0]) + j, :])]
     
     return d    
 
 
-def nn_aligned_dist(object, projections, rank = True):
+def nn_aligned_dist(Xct_object, projections, rank = True):
     '''output info of each pair'''
     #manifold alignment pair distances
     print('computing pair-wise distances...')
-    result_nn = _pair_distance(object, projections) #dict
+    result_nn = _pair_distance(Xct_object, projections) #dict
     print('manifold aligned # of pairs:', len(result_nn))
 
     #output dist matrix     
     df_nn = pd.DataFrame.from_dict(result_nn, orient='index', columns=['idx', 'dist'])
 
-    dist_net = np.asarray(df_nn['dist']).reshape((len(object.genes_names[0]), len(object.genes_names[1])))
-    df_nn_to_output = pd.DataFrame(dist_net, index = object.genes_names[0], columns = object.genes_names[1])
+    dist_net = np.asarray(df_nn['dist']).reshape((len(Xct_object.genes_names[0]), len(Xct_object.genes_names[1])))
+    df_nn_to_output = pd.DataFrame(dist_net, index = Xct_object.genes_names[0], columns = Xct_object.genes_names[1])
     
     if rank:
         #default: output ranked dist
@@ -477,7 +477,7 @@ def nn_aligned_dist(object, projections, rank = True):
         df_nn_to_output['rank'] = np.arange(len(df_nn_to_output)) + 1
         
         print('adding column \'correspondence_score\'...')
-        w12 = object._w[:object._net_A.shape[0], object._net_A.shape[1]:]
+        w12 = Xct_object._w[:Xct_object._net_A.shape[0], Xct_object._net_A.shape[1]:]
         correspondence_score = [w12[idx] for idx in np.asarray(df_nn_to_output['idx'])]
         df_nn_to_output['correspondence_score'] = correspondence_score
 
@@ -493,16 +493,16 @@ def filtered_nn_aligned_dist(df_nn, candidates):
     return df_nn_filtered
 
 
-def build_W(*objects):
+def build_W(*Xct_objects):
     '''build a cross-object corresponding matrix for further differential analysis'''
-    W12 = np.zeros((objects[0]._w.shape[0], objects[1]._w.shape[1]), float)
+    W12 = np.zeros((Xct_objects[0]._w.shape[0], Xct_objects[1]._w.shape[1]), float)
 
     mu = 0.9
-    scaled_diag = mu * ((objects[0]._w).sum() + (objects[1]._w).sum()) / (4 * len(W12)) 
+    scaled_diag = mu * ((Xct_objects[0]._w).sum() + (Xct_objects[1]._w).sum()) / (4 * len(W12)) 
     np.fill_diagonal(W12, scaled_diag)
 
-    W = np.block([[objects[0]._w, W12],
-    [W12.T, objects[1]._w]])
+    W = np.block([[Xct_objects[0]._w, W12],
+    [W12.T, Xct_objects[1]._w]])
     
     return W
 
