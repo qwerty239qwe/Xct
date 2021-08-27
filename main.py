@@ -200,7 +200,7 @@ class Xct(Xct_metrics):
         '''build_GRN: if True to build GRN thru pcNet, if False to load built GRN files;
             save_GRN: save constructed 2 pcNet;
             pcNet_name: name of GRN (.csv) files, read/write;
-            mode: 3 modes to construct correspondence: 'full, 'comb', 'pairs'
+            mode: 3 modes to construct correspondence w: 'full, 'comb', 'pairs'
             '''
         Xct_metrics.__init__(self, adata, specis = specis)
         self._cell_names = CellA, CellB
@@ -247,7 +247,7 @@ class Xct(Xct_metrics):
             print('building correspondence...')
         self._w = self._build_w(alpha = 0.55, queryDB = mode, scale_w = True) 
         if verbose:
-            print('init completed.')      
+            print('init completed.\n')      
         del ada_A, ada_B
 
     def __str__(self):
@@ -506,6 +506,21 @@ def build_W(*Xct_objects):
     
     return W
 
+def KnK(Xct_object, ko_genelist, copy = True):
+    '''set rows and cols of ko_genelist to zeros in correspondence w'''
+    from copy import deepcopy
+    #ko_gene index in cell A and B
+    ko_idx1 = [Xct_object.genes_names[0].index(g) for g in ko_genelist]
+    ko_idx2 = [Xct_object.genes_names[1].index(g) + len(Xct_object.genes_names[0]) for g in ko_genelist]
+    
+    if copy:
+        Xct_object = deepcopy(Xct_object)
+    for idx in [ko_idx1, ko_idx2]:
+        Xct_object._w[idx, :] = 0
+        Xct_object._w[:, idx] = 0
+    
+    return Xct_object
+
 
 def nn_aligned_dist_diff(df_nn1, df_nn2):
     '''pair-wise difference of aligned distance'''
@@ -602,7 +617,7 @@ if __name__ == '__main__':
     projections, losses = dNN.train_and_project(counts_np, obj._w, dim = 2, steps = 1000, lr = 0.001)
 
     df_nn = nn_aligned_dist(obj, projections)
-    df_enriched = chi2_test(df_nn, df = 3, FDR = False, candidates = candidates)
+    df_enriched = chi2_test(df_nn, df = 1, FDR = False, candidates = candidates)
     print(df_enriched.head())
 
 

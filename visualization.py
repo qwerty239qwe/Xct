@@ -16,7 +16,8 @@ visual_style_common["edge_curved"] = 0.1
 # visual_style_common["edge_arrow_width"] = 0.3
 visual_style_common["margin"] = 50
 
-def plot_pcNet(Xct_obj, view, gene_names, top_edges = 20, show = True, saveas = None, verbose = False, edge_width_scale = None, visual_style = visual_style_common.copy()):
+def plot_pcNet(Xct_obj, view, gene_names, top_edges = 20, show = True, saveas = None, verbose = False, edge_width_scale = None, random_state = 0,
+            visual_style = visual_style_common.copy()):
     '''visualize single cell type GRN, only showing direct edges associated with target genes'''
     if view == 'sender':
         net = Xct_obj._net_A
@@ -81,7 +82,7 @@ def plot_pcNet(Xct_obj, view, gene_names, top_edges = 20, show = True, saveas = 
         visual_style["edge_color"] = ['red' if w>0 else 'blue' for w in g.es['weight']]
         visual_style["layout"] = 'large'
         
-        random.seed(1) #layout
+        random.seed(random_state) #layout
         if show:
             if saveas is None:
                 return ig.plot(g, **visual_style)
@@ -93,7 +94,8 @@ def plot_pcNet(Xct_obj, view, gene_names, top_edges = 20, show = True, saveas = 
             return g
 
 
-def plot_XNet(g1, g2, Xct_pair = None, saveas = None, verbose = False, edge_width_scale = None, edge_width_max = 5, visual_style = visual_style_common.copy()):
+def plot_XNet(g1, g2, Xct_pair = None, saveas = None, verbose = False, edge_width_scale = None, edge_width_max = 5, random_state = 0,
+            visual_style = visual_style_common.copy()):
     '''visualize merged GRN from sender and receiver cell types,
         use edge_width_scale to make two graphs width comparable (both using absolute values)'''
     gg = g1.disjoint_union(g2) #merge disjointly
@@ -118,7 +120,7 @@ def plot_XNet(g1, g2, Xct_pair = None, saveas = None, verbose = False, edge_widt
     visual_style["layout"] = 'kk'
     visual_style["mark_groups"] = [(list(range(0, len(g1.vs))), "whitesmoke")] + [(list(range(len(g1.vs), len(g1.vs)+len(g2.vs))), "whitesmoke")]
  
-    random.seed(42) #layout
+    random.seed(random_state) #layout
     if saveas is None:
         return ig.plot(gg, **visual_style)
     else:
