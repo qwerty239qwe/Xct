@@ -10,7 +10,7 @@ warnings.filterwarnings("ignore")
 sc.settings.verbosity = 0
 
 try:
-    from scTenifoldXct import pcNet
+    from scTenifoldXct.pcNet import pcNet
 except ImportError:
     print('module \'pcNet\' not found')
 
@@ -337,8 +337,6 @@ class Xct(Xct_metrics):
     def _build_w(self, alpha, queryDB = 'full', scale_w = True): 
         '''build w: 3 modes, if 'full' will use all pair-wise corresponding scores'''
         # (1-a)*u^2 + a*var
-        # metric_A_temp = (np.square(self._metric_A[0]) + self._metric_A[1])[:, None] 
-        # metric_B_temp = (np.square(self._metric_B[0]) + self._metric_B[1])[None, :] 
         metric_A_temp = ((1-alpha)* np.square(self._metric_A[0]) + alpha* (self._metric_A[1]))[:, None] 
         metric_B_temp = ((1-alpha)* np.square(self._metric_B[0]) + alpha* (self._metric_B[1]))[None, :] 
         #print(metric_A_temp.shape, metric_B_temp.shape)
@@ -482,7 +480,10 @@ def nn_aligned_dist(Xct_object, projections, rank = True):
 
 def filtered_nn_aligned_dist(df_nn, candidates):
     '''filter to only L-R pairs'''
-    df_nn_filtered = df_nn.loc[candidates].sort_values(by=['rank']) #dist ranked L-R candidates
+    if 'diff2_rank' in df_nn.columns:
+        df_nn_filtered = df_nn.loc[candidates].sort_values(by=['diff2_rank']) #dist difference^2 ranked L-R candidates
+    else:
+        df_nn_filtered = df_nn.loc[candidates].sort_values(by=['rank']) #dist ranked L-R candidates
     print('manifold aligned # of L-R pairs:', len(df_nn_filtered))
     df_nn_filtered['rank_filtered'] = np.arange(len(df_nn_filtered)) + 1
 

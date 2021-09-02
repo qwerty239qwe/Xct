@@ -16,7 +16,7 @@ visual_style_common["edge_curved"] = 0.1
 # visual_style_common["edge_arrow_width"] = 0.3
 visual_style_common["margin"] = 50
 
-def plot_pcNet(Xct_obj, view, gene_names, top_edges = 20, show = True, saveas = None, verbose = False, edge_width_scale = None, 
+def plot_pcNet(Xct_obj, view, gene_names, top_edges = 20, show = True, saveas = None, verbose = False, edge_width_scale = None, random_state = None,
             visual_style = visual_style_common.copy()):
     '''visualize single cell type GRN, only showing direct edges associated with target genes'''
     if view == 'sender':
@@ -82,7 +82,8 @@ def plot_pcNet(Xct_obj, view, gene_names, top_edges = 20, show = True, saveas = 
         visual_style["edge_color"] = ['red' if w>0 else 'blue' for w in g.es['weight']]
         visual_style["layout"] = 'large'
         
-        #random.seed(0) #layout
+        if random_state is not None:
+            random.seed(random_state) #layout
         if show:
             if saveas is None:
                 return ig.plot(g, **visual_style)
