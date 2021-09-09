@@ -58,7 +58,7 @@ class Xct_metrics():
     
     def subset(self):
         '''subset adata var with only DB L and R'''
-        genes = np.ravel(self.LRs.values) 
+        genes = np.ravel(self.LRs.to_numpy()) 
         genes = np.unique(genes[genes != None])
         genes_use = self.genes.intersection(genes)
             
@@ -66,7 +66,7 @@ class Xct_metrics():
     
     def get_index(self, DB):
         '''original index of DB L-R pairs in adata var'''
-        g_LRs = DB.iloc[:, :2].values #L-R
+        g_LRs = DB.iloc[:, :2].to_numpy() #L-R
         gene_list = [None] + list(self.genes) 
 
         gene_index = np.zeros(len(np.ravel(g_LRs)), dtype = int)
@@ -529,7 +529,7 @@ def nn_aligned_dist_diff(df_nn1, df_nn2):
     return df_nn_all
 
 
-def chi2_test(df_nn, df = 3, pval = 0.05, FDR = True, candidates = None): #input all pairs (df_nn) for chi-sqaure and FDR on significant
+def chi2_test(df_nn, df = 1, pval = 0.05, FDR = False, candidates = None): #input all pairs (df_nn) for chi-sqaure and FDR on significant
     '''chi-sqaure left tail test to have enriched pairs'''
     if ('dist' and 'rank') not in df_nn.columns:
         raise IndexError('require resulted dataframe with column \'dist\' and \'rank\'') 
@@ -557,7 +557,7 @@ def chi2_test(df_nn, df = 3, pval = 0.05, FDR = True, candidates = None): #input
         return df_enriched
 
           
-def chi2_diff_test(df_nn, df = 2, pval = 0.05, FDR = False, candidates = None): #input all pairs (df_nn) for chi-sqaure and FDR on significant
+def chi2_diff_test(df_nn, df = 1, pval = 0.05, FDR = False, candidates = None): #input all pairs (df_nn) for chi-sqaure and FDR on significant
     '''chi-sqaure right tail test to have pairs with significant distance difference'''
     if ('diff2' and 'diff2_rank') in df_nn.columns:
         #dist2 = np.square(np.asarray(df_nn['diff']))
