@@ -6,6 +6,7 @@ import scipy
 from scipy.optimize import least_squares
 import itertools
 import warnings
+from anndata._core.views import ArrayView
 warnings.filterwarnings("ignore")
 sc.settings.verbosity = 0
 
@@ -81,16 +82,15 @@ class Xct_metrics():
         
         return genes_index_DB
 
-
-    def get_metric(self, adata, verbose = False): #require normalized data
+    def get_metric(self, adata: ArrayView, verbose = False): #require normalized data
         '''compute metrics for each gene'''
         data_norm = adata.X.toarray() if scipy.sparse.issparse(adata.X) else adata.X #adata.layers['log1p']
         if verbose:
             print('(cell, feature):', data_norm.shape)
         
         if (data_norm % 1 != 0).any(): #check space: True for log (float), False for counts (int)
-            mean = np.mean(data_norm, axis = 0)
-            var = np.var(data_norm, axis = 0)
+            mean = np.mean(data_norm, axis = 0).toarray()
+            var = np.var(data_norm, axis = 0).toarray()
             mean[mean == 0] = 1e-12
             dispersion = var / mean    
             cv = np.sqrt(var) / mean
@@ -99,14 +99,14 @@ class Xct_metrics():
         else:
             raise ValueError("require log data")
     
-    def chen2016_fit(self, adata, plot = False, verbose = False): #require raw data 
+    def chen2016_fit(self, adata: ArrayView, plot = False, verbose = False): #require raw data
         '''NB model fit mean vs CV'''
         data_raw = adata.layers['raw'].toarray() if scipy.sparse.issparse(adata.layers['raw']) else adata.layers['raw'] #.copy()
         if (data_raw % 1 != 0).any():
             raise ValueError("require counts (int) data")
         else:
-            mean_raw = np.mean(data_raw, axis = 0)
-            var_raw = np.var(data_raw, axis = 0)
+            mean_raw = np.mean(data_raw, axis = 0).toarray()
+            var_raw = np.var(data_raw, axis = 0).toarray()
             mean_raw[mean_raw == 0] = 1e-12
             cv_raw = np.sqrt(var_raw) / mean_raw
         
@@ -205,8 +205,8 @@ class Xct(Xct_metrics):
         if not ('ident' in adata.obs.keys()):
             raise IndexError('require adata with cell labels saved in \'ident\'')
         else:
-            ada_A = adata[adata.obs['ident'] == CellA, :].copy()
-            ada_B = adata[adata.obs['ident'] == CellB, :].copy()
+            ada_A = adata[adata.obs['ident'] == CellA, :]
+            ada_B = adata[adata.obs['ident'] == CellB, :]
         self._cell_numbers = ada_A.shape[0], ada_B.shape[0]
         self.genes_names = list(ada_A.var_names.astype(str)), list(ada_B.var_names.astype(str))
         self._X = ada_A.X, ada_B.X # input array for nn projection
