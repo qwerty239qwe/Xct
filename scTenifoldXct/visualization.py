@@ -53,7 +53,7 @@ def plot_pcNet(Xct_obj, view, gene_names, top_edges = 20, show = True, saveas = 
         
         if len(g.es) == 0:
             gene_names = ' '.join(map(str, gene_names)) #string
-            raise ValueError(f'target gene {gene_names} generated 0 edge, stoped...')
+            raise ValueError(f'target gene {gene_names} generated 0 edge...')
         #trim low weight edges
         abs_weight = [abs(w) for w in g.es['weight']]
         edges_delete_ids = sorted(range(len(abs_weight)), key=lambda k: abs_weight[k])[:-top_edges] #idx from bottom
