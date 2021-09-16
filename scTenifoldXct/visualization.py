@@ -15,8 +15,8 @@ visual_style_common["edge_curved"] = 0.1
 # visual_style_common["edge_arrow_width"] = 0.3
 visual_style_common["margin"] = 50
 
-def plot_pcNet(Xct_obj, view, gene_names, match_fig = None, top_edges = 20, remove_isolated_nodes = True, show = True, saveas = None, verbose = False, edge_width_scale = None, layout = 'large',
-            visual_style = visual_style_common.copy()):
+def plot_pcNet(Xct_obj, view, gene_names, match_fig = None, top_edges = 20, remove_isolated_nodes = True, bbox_scale = 1, 
+            show = True, saveas = None, verbose = False, edge_width_scale = None, layout = 'large', visual_style = visual_style_common.copy()):
     '''visualize single cell type GRN, only showing direct edges associated with target genes'''
     if view == 'sender':
         net = Xct_obj._net_A
@@ -87,7 +87,7 @@ def plot_pcNet(Xct_obj, view, gene_names, match_fig = None, top_edges = 20, remo
             print(f'undirected graph constructed: \n# of nodes: {len(g.vs)}, # of edges: {len(g.es)}\n')
          
         #graph-specific visual_style after graph building
-        visual_style["bbox"] = (256*len(set(gene_names)), 256*len(set(gene_names)))
+        visual_style["bbox"] = (512*bbox_scale, 512*bbox_scale)
         visual_style["vertex_label"] = g.vs["name"]
         visual_style["vertex_color"] = ['darkgray' if tf==1 else 'darkorange' for tf in g.vs["is_TF"]]
         visual_style["vertex_shape"] = ['circle' if tf==1 else 'square' for tf in g.vs["is_TF"]]
@@ -108,7 +108,7 @@ def plot_pcNet(Xct_obj, view, gene_names, match_fig = None, top_edges = 20, remo
             return g
 
 
-def plot_XNet(g1, g2, Xct_pair, saveas = None, verbose = False, edge_width_scale = None, edge_width_max = 5, layout = 'kk',
+def plot_XNet(g1, g2, Xct_pair, saveas = None, verbose = False, edge_width_scale = None, edge_width_max = 5, layout = 'kk', bbox_scale = 1,
             visual_style = visual_style_common.copy()):
     '''visualize merged GRN from sender and receiver cell types,
         use edge_width_scale to make two graphs width comparable (both using absolute values)'''
@@ -122,7 +122,7 @@ def plot_XNet(g1, g2, Xct_pair, saveas = None, verbose = False, edge_width_scale
         if verbose:
             print(f'edge from {pair[0]} to {pair[1]} added')
     
-    visual_style["bbox"] = (512*len(Xct_pair), 512*len(Xct_pair))
+    visual_style["bbox"] = (768*bbox_scale, 768*bbox_scale)
     visual_style["vertex_label"] = gg.vs["name"]
     visual_style["vertex_color"] = ['darkgray' if tf==1 else 'darkorange' for tf in gg.vs["is_TF"]]
     visual_style["vertex_shape"] = ['circle' if tf==1 else 'square' for tf in gg.vs["is_TF"]]
