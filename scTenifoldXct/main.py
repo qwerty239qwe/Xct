@@ -84,13 +84,13 @@ class Xct_metrics():
 
     def get_metric(self, adata: ArrayView, verbose = False): #require normalized data
         '''compute metrics for each gene'''
-        data_norm = adata.X.toarray() if scipy.sparse.issparse(adata.X) else adata.X #adata.layers['log1p']
+        data_norm = adata.X.toarray() if scipy.sparse.issparse(adata.X) else adata.X.toarray() #adata.layers['log1p']
         if verbose:
             print('(cell, feature):', data_norm.shape)
         
         if (data_norm % 1 != 0).any(): #check space: True for log (float), False for counts (int)
-            mean = np.mean(data_norm, axis = 0).toarray()
-            var = np.var(data_norm, axis = 0).toarray()
+            mean = np.mean(data_norm, axis = 0)
+            var = np.var(data_norm, axis = 0)
             mean[mean == 0] = 1e-12
             dispersion = var / mean    
             cv = np.sqrt(var) / mean
@@ -101,12 +101,12 @@ class Xct_metrics():
     
     def chen2016_fit(self, adata: ArrayView, plot = False, verbose = False): #require raw data
         '''NB model fit mean vs CV'''
-        data_raw = adata.layers['raw'].toarray() if scipy.sparse.issparse(adata.layers['raw']) else adata.layers['raw'] #.copy()
+        data_raw = adata.layers['raw'].toarray() if scipy.sparse.issparse(adata.layers['raw']) else adata.layers['raw'].toarray() #.copy()
         if (data_raw % 1 != 0).any():
             raise ValueError("require counts (int) data")
         else:
-            mean_raw = np.mean(data_raw, axis = 0).toarray()
-            var_raw = np.var(data_raw, axis = 0).toarray()
+            mean_raw = np.mean(data_raw, axis = 0)
+            var_raw = np.var(data_raw, axis = 0)
             mean_raw[mean_raw == 0] = 1e-12
             cv_raw = np.sqrt(var_raw) / mean_raw
         
