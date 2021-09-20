@@ -18,7 +18,7 @@ except ImportError:
 
 class Xct_metrics():
     '''require adata with layer 'raw' (counts) and 'log1p' (normalized), cell labels in obs 'ident' '''
-    __slots__ = ('_specis', 'genes', 'LRs', '_genes_index_DB', 'TFs')
+    #__slots__ = ('_specis', 'genes', 'LRs', '_genes_index_DB', 'TFs')
     def __init__(self, adata, specis = 'Human'): 
         if not ('raw' and 'log1p' in adata.layers.keys()):
             raise IndexError('require adata with count and normalized layers named \'raw\' and \'log1p\'')
@@ -84,13 +84,13 @@ class Xct_metrics():
 
     def get_metric(self, adata: ArrayView, verbose = False): #require normalized data
         '''compute metrics for each gene'''
-        data_norm = adata.X.toarray() if scipy.sparse.issparse(adata.X) else adata.X #adata.layers['log1p']
+        data_norm = adata.X.toarray() if scipy.sparse.issparse(adata.X) else adata.X.copy() #adata.layers['log1p']
         if verbose:
             print('(cell, feature):', data_norm.shape)
         
         if (data_norm % 1 != 0).any(): #check space: True for log (float), False for counts (int)
-            mean = np.mean(data_norm, axis = 0).toarray()
-            var = np.var(data_norm, axis = 0).toarray()
+            mean = np.mean(data_norm, axis = 0)#.toarray()
+            var = np.var(data_norm, axis = 0)#.toarray()
             mean[mean == 0] = 1e-12
             dispersion = var / mean    
             cv = np.sqrt(var) / mean
@@ -101,12 +101,12 @@ class Xct_metrics():
     
     def chen2016_fit(self, adata: ArrayView, plot = False, verbose = False): #require raw data
         '''NB model fit mean vs CV'''
-        data_raw = adata.layers['raw'].toarray() if scipy.sparse.issparse(adata.layers['raw']) else adata.layers['raw'] #.copy()
+        data_raw = adata.layers['raw'].toarray() if scipy.sparse.issparse(adata.layers['raw']) else adata.layers['raw'].copy()
         if (data_raw % 1 != 0).any():
             raise ValueError("require counts (int) data")
         else:
-            mean_raw = np.mean(data_raw, axis = 0).toarray()
-            var_raw = np.var(data_raw, axis = 0).toarray()
+            mean_raw = np.mean(data_raw, axis = 0)#.toarray()
+            var_raw = np.var(data_raw, axis = 0)#.toarray()
             mean_raw[mean_raw == 0] = 1e-12
             cv_raw = np.sqrt(var_raw) / mean_raw
         
@@ -192,13 +192,13 @@ class Xct_metrics():
       
 class Xct(Xct_metrics):
 
-    def __init__(self, adata, CellA, CellB, specis = 'Human', pmt = False, build_GRN = False, save_GRN = False, pcNet_name = 'pcNet', mode = None, verbose = False): 
+    def __init__(self, adata, CellA, CellB, specis = 'Human', pmt = False, build_GRN = False, save_GRN = False, pcNet_name = 'pcNet', mode = 'full', verbose = False): 
         '''build_GRN: if True to build GRN thru pcNet, if False to load built GRN files;
             save_GRN: save constructed 2 pcNet;
             pcNet_name: name of GRN (.csv) files, read/write;
             mode: 3 modes to construct correspondence w: 'full, 'comb', 'pairs'
             '''
-        Xct_metrics.__init__(self, adata, specis = specis)
+        super().__init__(adata, specis = specis)
         self._cell_names = CellA, CellB
         self._metric_names = ['mean', 'var', 'disp', 'cv', 'cv_res']
 
@@ -557,7 +557,7 @@ def chi2_test(df_nn, df = 1, pval = 0.05, FDR = False, candidates = None): #inpu
         return df_enriched
 
           
-def chi2_diff_test(df_nn, df = 1, pval = 0.05, FDR = False, candidates = None): #input all pairs (df_nn) for chi-sqaure and FDR on significant
+def chi2_diff_test(df_nn, df = 1, pval = 0.10, FDR = True, candidates = None): #input all pairs (df_nn) for chi-sqaure and FDR on significant
     '''chi-sqaure right tail test to have pairs with significant distance difference'''
     if ('diff2' and 'diff2_rank') in df_nn.columns:
         #dist2 = np.square(np.asarray(df_nn['diff']))
