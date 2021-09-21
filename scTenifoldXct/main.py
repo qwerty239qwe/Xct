@@ -415,6 +415,37 @@ def chi2_diff_test(df_nn, df = 1, pval = 0.10, FDR = True, candidates = None): #
     else:
         raise IndexError('require resulted dataframe with column \'diff2\' and \'diff2_rank\'') 
 
+
+def null_test(df_nn, candidates, pval = 5, plot = False):
+    
+    if ('dist' or 'correspondence_score') not in df_nn.columns:
+        raise IndexError('require resulted dataframe with column \'diff2\' and \'diff2_rank\'')
+        
+    else:
+        dist_test = df_nn[df_nn.index.isin(candidates)]
+        dist_null = df_nn[(~df_nn.index.isin(candidates)) & (df_nn['correspondence_score']!=0)]
+        # print(len(dist_null))
+
+        cut = np.percentile(np.asarray(dist_null['dist']), pval) # left tail
+
+        df_enriched = dist_test[dist_test['dist'] < cut].sort_values(by=['dist'])
+        print(f'\nTotal enriched: {len(df_enriched)} / {len(df_nn)}')    
+        df_enriched['enriched_rank'] = np.arange(len(df_enriched)) + 1
+        
+        if plot: 
+            plt.hist(dist_null['dist'], bins=1000, color='gray')
+            for d in dist_test['dist']:
+                if d < cut:
+                    c='red'
+                else:
+                    c='gray'
+                plt.axvline(d, linewidth=1, c=c)
+            plt.xlabel('distance')
+            plt.show()
+
+    return df_enriched
+
+
 def get_genelist(df_enriched, saveas = None):
     '''get a list of single genes from enriched pairs'''
     targets = np.ravel([n.split('_') for n in df_enriched.index]) #.tolist()
