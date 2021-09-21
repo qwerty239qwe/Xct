@@ -2,11 +2,12 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import scanpy as sc
+from anndata._core.views import ArrayView
 import scipy
-from scipy.optimize import least_squares
+from statsmodels.stats.multitest import multipletests
 import itertools
 import warnings
-from anndata._core.views import ArrayView
+
 warnings.filterwarnings("ignore")
 sc.settings.verbosity = 0
 
@@ -91,134 +92,43 @@ class Xct_metrics():
         if (data_norm % 1 != 0).any(): #check space: True for log (float), False for counts (int)
             mean = np.mean(data_norm, axis = 0)#.toarray()
             var = np.var(data_norm, axis = 0)#.toarray()
-            mean[mean == 0] = 1e-12
-            dispersion = var / mean    
-            cv = np.sqrt(var) / mean
+            # mean[mean == 0] = 1e-12
+            # dispersion = var / mean    
+            # cv = np.sqrt(var) / mean
 
-            return mean, var, dispersion, cv
+            return mean, var #, dispersion, cv
         else:
             raise ValueError("require log data")
-    
-    def chen2016_fit(self, adata: ArrayView, plot = False, verbose = False): #require raw data
-        '''NB model fit mean vs CV'''
-        data_raw = adata.layers['raw'].toarray() if scipy.sparse.issparse(adata.layers['raw']) else adata.layers['raw'].copy()
-        if (data_raw % 1 != 0).any():
-            raise ValueError("require counts (int) data")
-        else:
-            mean_raw = np.mean(data_raw, axis = 0)#.toarray()
-            var_raw = np.var(data_raw, axis = 0)#.toarray()
-            mean_raw[mean_raw == 0] = 1e-12
-            cv_raw = np.sqrt(var_raw) / mean_raw
-        
-        xdata_orig = mean_raw #raw
-        ydata_orig = np.log10(cv_raw) #log   
-        rows = len(xdata_orig) #features
-
-        r = np.invert(np.isinf(ydata_orig)) # filter -Inf
-        ydata = ydata_orig[r] #Y
-        xdata = xdata_orig[r] #X
-
-        #poly fit: log-log
-        z = np.polyfit(np.log10(xdata), ydata, 2) 
-
-        def predict(z, x):
-            return z[0]*(x**2) + z[1]*x + z[2]
-
-        xSeq_log = np.arange(min(np.log10(xdata)), max(np.log10(xdata)), 0.005) 
-        ySeq_log = predict(z, xSeq_log)  #predicted y
-
-        #start point for fit
-        #plt.hist(np.log10(xdata), bins=100)
-        def h(i):
-            a = np.log10(xdata) >= (xSeq_log[i] - 0.05)
-            b = np.log10(xdata) < (xSeq_log[i] + 0.05)
-            return np.sum((a & b))
-
-        gapNum = [h(i) for i in range(0, len(xSeq_log))] #density histogram of xdata
-        cdx = np.nonzero(np.array(gapNum) > rows*0.005)[0] #start from high density bin
-
-        xSeq = 10 ** xSeq_log 
-
-        #end pointy for fit
-        yDiff = np.diff(ySeq_log, 1) #a[i+1] - a[i]
-        ix = np.nonzero((yDiff > 0) & (np.log10(xSeq[0:-1]) > 0))[0] # index of such (X, Y) at lowest Y
-
-        if len(ix) == 0:
-            ix = len(ySeq_log) - 1 # use all
-        else:
-            ix = ix[0]
-
-        #subset data for fit
-        xSeq_all = 10**np.arange(min(np.log10(xdata)), max(np.log10(xdata)), 0.001) 
-        xSeq = xSeq[cdx[0]:ix]
-        ySeq_log = ySeq_log[cdx[0]:ix]
-
-        if verbose:
-            #print(ix, cdx[0])
-            print('{} (intervals for fit) / {} (filtered -Inf) / {} (original) features for the fit'.format(ix-cdx[0], len(ydata), len(ydata_orig)))
-
-        #lst fit
-        def residuals(coeff, t, y):
-            return y - 0.5 * (np.log10(coeff[1]/t + coeff[0])) # x: raw mean y:log(cv)
-
-        x0 = np.array([0, 1], dtype=float) # initial guess a=0, b=1
-        model = least_squares(residuals, x0, loss='soft_l1', f_scale= 0.01, args=(xSeq, ySeq_log))
-
-        def predict_robust(coeff, x):
-            return 0.5 * (np.log10(coeff[1]/x + coeff[0]))
-
-        ydataFit = predict_robust(model.x, xdata_orig) #logCV
-
-        def cv_diff(obs_cv, fit_cv): 
-            obs_cv[obs_cv == 0] = 1e-12
-            diff = np.log10(obs_cv) - fit_cv
-            return diff #{key: v for key, v in zip(self.genes, diff)} 
-
-        if plot:
-            y_predict = predict_robust(model.x, xSeq) 
-            plt.figure(figsize=(6, 5), dpi=80)   
-            plt.scatter(np.log10(xdata), ydata, s=3, marker='o') # orig
-            plt.plot(np.log10(xSeq), ySeq_log, c='black', label='poly fit') # poly fit
-            plt.plot(np.log10(xSeq), y_predict, label='robust lsq', c='r') # robust nonlinear
-            plt.xlabel('log10(mean)')
-            plt.ylabel('log10(CV)')
-            plt.legend(loc='lower left')
-            plt.show()
-        
-        diff = cv_diff(cv_raw, ydataFit)
-        return diff #log CV difference
-      
       
       
 class Xct(Xct_metrics):
 
-    def __init__(self, adata, CellA, CellB, specis = 'Human', pmt = False, build_GRN = False, save_GRN = False, pcNet_name = 'pcNet', mode = 'full', verbose = False): 
+    def __init__(self, adata, CellA, CellB, specis = 'Human', build_GRN = False, save_GRN = False, pcNet_name = 'pcNet', queryDB = None, verbose = False): 
         '''build_GRN: if True to build GRN thru pcNet, if False to load built GRN files;
             save_GRN: save constructed 2 pcNet;
             pcNet_name: name of GRN (.csv) files, read/write;
-            mode: 3 modes to construct correspondence w: 'full, 'comb', 'pairs'
+            queryDB: 3 modes to construct correspondence w: None, 'comb', 'pairs'
             '''
         super().__init__(adata, specis = specis)
         self._cell_names = CellA, CellB
-        self._metric_names = ['mean', 'var', 'disp', 'cv', 'cv_res']
+        self._metric_names = ['mean', 'var']
 
         if not ('ident' in adata.obs.keys()):
             raise IndexError('require adata with cell labels saved in \'ident\'')
         else:
-            ada_A = adata[adata.obs['ident'] == CellA, :]
-            ada_B = adata[adata.obs['ident'] == CellB, :]
+            ada_A = adata[adata.obs['ident'] == CellA, :] # view
+            ada_B = adata[adata.obs['ident'] == CellB, :] # view
         self._cell_numbers = ada_A.shape[0], ada_B.shape[0]
         self.genes_names = list(ada_A.var_names.astype(str)), list(ada_B.var_names.astype(str))
         self._X = ada_A.X, ada_B.X # input array for nn projection
         if verbose:
             print(f'init an Xct object for interactions from {self._cell_names[0]} ({self._cell_numbers[0]}) to {self._cell_names[1]} ({self._cell_numbers[1]})...')
         
-        self._metric_A = np.vstack([self.get_metric(ada_A), self.chen2016_fit(ada_A)]) #len 5
-        self._metric_B = np.vstack([self.get_metric(ada_B), self.chen2016_fit(ada_B)])
-        
-        if not pmt:
-            self.ref = self.fill_metric()
-            self.genes_index = self.get_index(DB = self.ref)
+        self._metric_A = self.get_metric(ada_A)
+        self._metric_B = self.get_metric(ada_B)
+            
+        self.ref = self.fill_metric()
+        self.genes_index = self.get_index(DB = self.ref)
         if build_GRN: 
             if verbose:
                 print('building GRN...')
@@ -241,7 +151,7 @@ class Xct(Xct_metrics):
                 print('require pcNet_name where csv files saved in with tab as delimiter')
         if verbose:
             print('building correspondence...')
-        self._w = self._build_w(alpha = 0.55, queryDB = mode, scale_w = True) 
+        self._w = self._build_w(alpha = 0.55, queryDB = queryDB, scale_w = True) 
         if verbose:
             print('init completed.\n')      
         del ada_A, ada_B
@@ -258,9 +168,7 @@ class Xct(Xct_metrics):
         if ref_obj is None:
             genes_index = self._genes_index_DB
         else:
-            #if isinstance(ref_obj, Xct):
             genes_index = ref_obj.genes_index
-        #print(genes_index)
         
         index_L = genes_index[:, 0]
         index_R = genes_index[:, 1]
@@ -268,30 +176,16 @@ class Xct(Xct_metrics):
         df = pd.DataFrame()
 
         for metric_A, metric_B, metric in zip(self._metric_A, self._metric_B, self._metric_names):
-            filled_L = []
-            filled_R = []
-            for i in index_L:
-                if i == 0:
-                    filled_L.append(0) #none expression
-                else:
-                    filled_L.append(np.round(metric_A[i-1], 11))
-            filled_L = np.array(filled_L, dtype=float)
-
-            for i in index_R:
-                if i == 0:
-                    filled_R.append(0)
-                else:
-                    filled_R.append(np.round(metric_B[i-1], 11))
-            filled_R = np.array(filled_R, dtype=float)
+            filled_L = np.array([0 if i == 0 else metric_A[i-1] for i in index_L], dtype = float)
+            filled_R = np.array([0 if i == 0 else metric_B[i-1] for i in index_R], dtype = float)
 
             filled = np.concatenate((filled_L[:, None], filled_R[:, None]), axis=1)
             result = pd.DataFrame(data = filled, columns = [f'{metric}_L', f'{metric}_R'])
             df = pd.concat([df, result], axis=1)   
-        #DB = skin.DB.reset_index(drop = True, inplace = False) 
            
         if ref_obj is None:
             df = pd.concat([self.LRs, df], axis=1) # concat 1:1 since sharing same index
-            mask1 = (df['mean_L'] > 0) & (df['mean_R'] > 0) # filter 0 for first LR
+            mask1 = (df['mean_L'] > 0) & (df['mean_R'] > 0) # filter 0 (none or zero expression) of LR
             df = df[mask1]
             
         else: 
@@ -299,43 +193,13 @@ class Xct(Xct_metrics):
             df = pd.concat([ref_DB, df], axis=1)
             df.set_index(pd.Index(ref_obj.ref.index), inplace = True)
             
-        #df.replace(to_replace={0:None}, inplace = True) #for geo mean: replace 0 to None
-        
-        #df.to_csv('df.csv', index=False)
         if verbose:
             print('Selected {} LR pairs'.format(df.shape[0]))
 
         return df
-    
-    
-    def score(self, ref_DB = None, method = 0, a = 1):
-        '''L-R score'''
-        if ref_DB is None:
-            ref_DB = self.ref.copy()
-        S0 = ref_DB['mean_L'] * ref_DB['mean_R'] 
-        S0 /= np.percentile(S0, 80) 
-        S0 = S0/(0.5 + S0)
 
-        if method == 0:
-            return S0  
-        if method == 1:
-            S = (ref_DB['mean_L']**2 + ref_DB['var_L']) + a*(ref_DB['mean_R']**2 + ref_DB['var_R'])
-            S = S/(0.5 + S)
-        if method == 2:
-            S = ref_DB['disp_L'] * ref_DB['disp_R']
-        if method == 3:
-            S = ref_DB['cv_L'] + a*ref_DB['cv_R']
-        if method == 4:
-            ref_DB['cv_res_L'][ref_DB['cv_res_L'] < 0] = 0
-            S = abs(ref_DB['cv_res_L'] * ref_DB['cv_res_R'])
-            S = S/(0.5+S) + a*S0
-        if method == 5:
-            S = ref_DB['cv_res_L'] + a*ref_DB['cv_res_R']
-
-        return S #.astype(float)
-
-    def _build_w(self, alpha, queryDB = 'full', scale_w = True): 
-        '''build w: 3 modes, if 'full' will use all pair-wise corresponding scores'''
+    def _build_w(self, alpha, queryDB = None, scale_w = True): 
+        '''build w: 3 modes, default None will not query the DB and use all pair-wise corresponding scores'''
         # (1-a)*u^2 + a*var
         metric_A_temp = ((1-alpha)* np.square(self._metric_A[0]) + alpha* (self._metric_A[1]))[:, None] 
         metric_B_temp = ((1-alpha)* np.square(self._metric_B[0]) + alpha* (self._metric_B[1]))[None, :] 
@@ -360,9 +224,9 @@ class Xct(Xct_metrics):
             
             return w
 
-        if queryDB not in ['full', 'comb', 'pairs']:
-            raise KeyError('queryDB using the keyword \'full\', \'comb\' or \'pairs\'')
-        elif queryDB == 'full':
+        if queryDB not in [None, 'comb', 'pairs']:
+            raise KeyError('queryDB using the keyword None, \'comb\' or \'pairs\'')
+        elif queryDB is None:
             pass
         elif queryDB == 'comb':
             # ada.var index of LR genes (the intersect of DB and object genes, no pair relationship maintained)
@@ -393,34 +257,6 @@ def get_candidates(df_filtered):
     '''selected L-R candidates'''
     candidates = [a+'_'+b for a, b in zip(np.asarray(df_filtered['ligand'],dtype=str), np.asarray(df_filtered['receptor'],dtype=str))]
     return candidates
-
-
-def scores(adata, ref_obj, method = 0, a = 1, n = 100):
-    '''cell labels permutation'''
-    result = []
-    temp = adata.copy()
-    
-    for _ in range(n):
-        labels_pmt = np.random.permutation(temp.obs['ident']) #pmt gloablly
-        temp.obs['ident'] = labels_pmt
-        pmt_obj = Xct(temp, ref_obj._cell_names[0], ref_obj._cell_names[1], pmt =True)
-        df_pmt = pmt_obj.fill_metric(ref_obj = ref_obj)
-        result.append(pmt_obj.score(ref_DB = df_pmt, method = method, a = a))
-    
-    return np.array(result).T
-  
-
-def pmt_test(orig_score, scores, p = 0.05):
-    '''significant result for permutation test'''
-    enriched_i, pvals, counts = ([] for _ in range(3))
-    for i, dist in enumerate(scores):
-        count = sum(orig_score[i] > value for value in dist)
-        pval = 1- count/len(dist)
-        pvals.append(pval)
-        counts.append(count)       
-        if pval < p:
-            enriched_i.append(i)             
-    return enriched_i, pvals, counts
 
 
 def get_counts_np(*Xct_objects):
@@ -460,7 +296,7 @@ def nn_aligned_dist(Xct_object, projections, rank = True):
 
     #output dist matrix     
     df_nn = pd.DataFrame.from_dict(result_nn, orient='index', columns=['idx', 'dist'])
-
+    del result_nn
     dist_net = np.asarray(df_nn['dist']).reshape((len(Xct_object.genes_names[0]), len(Xct_object.genes_names[1])))
     df_nn_to_output = pd.DataFrame(dist_net, index = Xct_object.genes_names[0], columns = Xct_object.genes_names[1])
     
@@ -529,19 +365,16 @@ def nn_aligned_dist_diff(df_nn1, df_nn2):
     return df_nn_all
 
 
-def chi2_test(df_nn, df = 1, pval = 0.05, FDR = False, candidates = None): #input all pairs (df_nn) for chi-sqaure and FDR on significant
+def chi2_test(df_nn, df = 1, pval = 0.05, FDR = True, candidates = None): #input all pairs (df_nn) for chi-sqaure and FDR on significant
     '''chi-sqaure left tail test to have enriched pairs'''
     if ('dist' and 'rank') not in df_nn.columns:
         raise IndexError('require resulted dataframe with column \'dist\' and \'rank\'') 
     else:
-            # keys = ['diff2', 'diff2_rank']
-            # keys = ['dist', 'rank']
         dist2 = np.square(np.asarray(df_nn['dist']))
         dist_mean = np.mean(dist2)
         FC = dist2 / dist_mean
         p = scipy.stats.chi2.cdf(FC, df = df) #left tail CDF    
         if FDR:
-            from statsmodels.stats.multitest import multipletests
             rej, p, _, _ = multipletests(pvals = p, alpha = pval, method = 'fdr_bh')
             
         df_nn['p_val'] = p
@@ -565,7 +398,6 @@ def chi2_diff_test(df_nn, df = 1, pval = 0.10, FDR = True, candidates = None): #
         FC = np.asarray(df_nn['diff2']) / dist_mean
         p = 1- scipy.stats.chi2.cdf(FC, df = df) # 1- left tail CDF 
         if FDR:
-            from statsmodels.stats.multitest import multipletests
             rej, p, _, _ = multipletests(pvals = p, alpha = pval, method = 'fdr_bh')
             
         df_nn['p_val'] = p
@@ -603,9 +435,9 @@ if __name__ == '__main__':
     sc.pp.log1p(ada)
     ada.layers['log1p'] = ada.X.copy()
 
-    obj = Xct(ada, '14Mo', '15Mo', build_GRN = True, save_GRN = True, pcNet_name = 'Net_for_Test', mode = 'full', verbose = True)
+    obj = Xct(ada, '14Mo', '15Mo', build_GRN = True, save_GRN = True, pcNet_name = 'Net_for_Test', queryDB = None, verbose = True)
     print(obj)
-    # obj_load = Xct(ada, '14Mo', '15Mo', build_GRN = False, pcNet_name = 'Net_for_Test', mode = 'full', verbose = True)
+    # obj_load = Xct(ada, '14Mo', '15Mo', build_GRN = False, pcNet_name = 'Net_for_Test', queryDB = None, verbose = True)
     # print('Testing loading...')
 
     df1 = obj.fill_metric()
