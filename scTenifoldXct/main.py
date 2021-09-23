@@ -277,49 +277,44 @@ def plot_nn_loss(losses):
     plt.show()
 
 
-def _pair_distance(Xct_object, projections): #projections: manifold alignment, ndarray
-    '''distances of each pair in latent space'''
-    d = {}
-    for i, l in enumerate(Xct_object.genes_names[0]):
-        for j, r in enumerate(Xct_object.genes_names[1]):
-            d[f'{l}_{r}'] = [(i, j), np.linalg.norm(projections[i, :] - projections[len(Xct_object.genes_names[0]) + j, :])]
-    
-    return d    
+def _pair_distance(Xct_object, projections, dist_metric = 'euclidean'): 
+    '''distances of each directional pair in latent space'''
+    X = projections[:len(projections)//2, :]
+    Y = projections[len(projections)//2:, :]
+    dist = scipy.spatial.distance.cdist(X, Y, metric = dist_metric)
+    dist_df = pd.DataFrame(dist, index = Xct_object.genes_names[0], columns = Xct_object.genes_names[1])
 
+    return dist_df    
+ 
 
-def nn_aligned_dist(Xct_object, projections, rank = True):
+def nn_aligned_dist(Xct_object, projections, dist_metric = 'euclidean', rank = False):
     '''output info of each pair'''
-    #manifold alignment pair distances
-    print('computing pair-wise distances...')
-    result_nn = _pair_distance(Xct_object, projections) #dict
-    print('manifold aligned # of pairs:', len(result_nn))
-
-    #output dist matrix     
-    df_nn = pd.DataFrame.from_dict(result_nn, orient='index', columns=['idx', 'dist'])
-    del result_nn
-    dist_net = np.asarray(df_nn['dist']).reshape((len(Xct_object.genes_names[0]), len(Xct_object.genes_names[1])))
-    df_nn_to_output = pd.DataFrame(dist_net, index = Xct_object.genes_names[0], columns = Xct_object.genes_names[1])
+    print(f'computing pair-wise {dist_metric} distances...')
+    dist_df = _pair_distance(Xct_object, projections, dist_metric = dist_metric) 
+    
+    dist_df = pd.DataFrame(dist_df.stack()) # multi_index
+    dist_df.reset_index(level=[0,1], inplace=True)
+    dist_df.columns = ['ligand', 'receptor', 'dist']
+    dist_df.index = dist_df['ligand'] + '_' + dist_df['receptor']
+    
+    print('adding column \'correspondence\'...')
+    w12 = Xct_object._w[:Xct_object._net_A.shape[0], Xct_object._net_A.shape[1]:]
+    dist_df['correspondence'] = w12.reshape((w12.size, ))
     
     if rank:
-        #default: output ranked dist
         print('adding column \'rank\'...')
-        df_nn_to_output = df_nn.sort_values(by=['dist'])
-        df_nn_to_output['rank'] = np.arange(len(df_nn_to_output)) + 1
-        
-        print('adding column \'correspondence_score\'...')
-        w12 = Xct_object._w[:Xct_object._net_A.shape[0], Xct_object._net_A.shape[1]:]
-        correspondence_score = [w12[idx] for idx in np.asarray(df_nn_to_output['idx'])]
-        df_nn_to_output['correspondence_score'] = correspondence_score
+        dist_df = dist_df.sort_values(by=['dist'])
+        dist_df['rank'] = np.arange(len(dist_df)) + 1
 
-    return df_nn_to_output 
+    return dist_df
 
 
 def filtered_nn_aligned_dist(df_nn, candidates):
     '''filter to only L-R pairs'''
-    if 'diff2_rank' in df_nn.columns:
-        df_nn_filtered = df_nn.loc[candidates].sort_values(by=['diff2_rank']) #dist difference^2 ranked L-R candidates
+    if 'diff2' in df_nn.columns:
+        df_nn_filtered = df_nn.loc[candidates].sort_values(by=['diff2']) #dist difference^2 ranked L-R candidates
     else:
-        df_nn_filtered = df_nn.loc[candidates].sort_values(by=['rank']) #dist ranked L-R candidates
+        df_nn_filtered = df_nn.loc[candidates].sort_values(by=['dist']) #dist ranked L-R candidates
     print('manifold aligned # of L-R pairs:', len(df_nn_filtered))
     df_nn_filtered['rank_filtered'] = np.arange(len(df_nn_filtered)) + 1
 
@@ -355,75 +350,93 @@ def KnK(Xct_object, ko_genelist, copy = True):
     return Xct_object
 
 
-def nn_aligned_dist_diff(df_nn1, df_nn2):
+def nn_aligned_dist_diff(df_nn1, df_nn2, rank = False):
     '''pair-wise difference of aligned distance'''
-    df_nn_all = pd.concat([df_nn1, df_nn2], axis=1) 
+    print(f'computing pair-wise distance differences...')
+    df_nn2_concat = df_nn2.drop(['ligand', 'receptor'], axis=1)
+
+    df_nn_all = pd.concat([df_nn1, df_nn2_concat], axis=1) 
+    print('adding column \'diff2\'...')
     df_nn_all['diff2'] = np.square(df_nn_all['dist'].iloc[:, 0] - df_nn_all['dist'].iloc[:, 1]) #there are two 'dist' cols
-    df_nn_all = df_nn_all.sort_values(by=['diff2'], ascending=False)
-    df_nn_all['diff2_rank'] = np.arange(len(df_nn_all)) + 1
+    if rank:
+        print('adding column \'diff2_rank\'...')
+        df_nn_all = df_nn_all.sort_values(by=['diff2'], ascending=False)
+        df_nn_all['diff2_rank'] = np.arange(len(df_nn_all)) + 1
 
     return df_nn_all
 
 
-def chi2_test(df_nn, df = 1, pval = 0.05, FDR = True, candidates = None): #input all pairs (df_nn) for chi-sqaure and FDR on significant
+def chi2_test(df_nn, df = 1, pval = 0.05, FDR = True, candidates = None): 
     '''chi-sqaure left tail test to have enriched pairs'''
-    if ('dist' and 'rank') not in df_nn.columns:
-        raise IndexError('require resulted dataframe with column \'dist\' and \'rank\'') 
+    if 'dist' not in df_nn.columns:
+        raise IndexError('require resulted dataframe with column \'dist\'') 
     else:
         dist2 = np.square(np.asarray(df_nn['dist']))
         dist_mean = np.mean(dist2)
         FC = dist2 / dist_mean
-        p = scipy.stats.chi2.cdf(FC, df = df) #left tail CDF    
+        p = scipy.stats.chi2.cdf(FC, df = df) # left tail CDF 
+        df_enriched = df_nn.copy()
+        df_enriched['p_val'] = p   
+        
         if FDR:
-            rej, p, _, _ = multipletests(pvals = p, alpha = pval, method = 'fdr_bh')
-            
-        df_nn['p_val'] = p
-        df_enriched = df_nn[df_nn['p_val'] < pval].sort_values(by=['rank'])
-        if FDR:
-            df_enriched.rename({'p_val': 'q_val'}, axis=1, inplace=True)
-        if candidates is not None: #filter LR pairs among enriched pairs
+            rej, q, _, _ = multipletests(pvals = p, alpha = pval, method = 'fdr_bh')
+            df_enriched['q_val'] = q
+            df_enriched = df_enriched[df_enriched['q_val'] < pval]
+        else:
+            df_enriched = df_enriched[df_enriched['p_val'] < pval]
+        if candidates is not None: 
             overlap = set(candidates).intersection(set(df_enriched.index))
-            df_enriched = df_enriched.loc[overlap].sort_values(by=['rank'])
+            df_enriched = df_enriched.loc[overlap].sort_values(by=['dist'])
             df_enriched['enriched_rank'] = np.arange(len(df_enriched)) + 1
         print(f'\nTotal enriched: {len(df_enriched)} / {len(df_nn)}')
 
         return df_enriched
 
           
-def chi2_diff_test(df_nn, df = 1, pval = 0.10, FDR = True, candidates = None): #input all pairs (df_nn) for chi-sqaure and FDR on significant
+def chi2_diff_test(df_nn, df = 1, pval = 0.05, FDR = True, candidates = None): 
     '''chi-sqaure right tail test to have pairs with significant distance difference'''
-    if ('diff2' and 'diff2_rank') in df_nn.columns:
+    if 'diff2' not in df_nn.columns:
+        raise IndexError('require resulted dataframe with column \'diff2\'') 
+
+    else:
         #dist2 = np.square(np.asarray(df_nn['diff']))
         dist_mean = np.mean(df_nn['diff2'])
         FC = np.asarray(df_nn['diff2']) / dist_mean
         p = 1- scipy.stats.chi2.cdf(FC, df = df) # 1- left tail CDF 
+        df_enriched = df_nn.copy()
+        df_enriched['p_val'] = p
+        
         if FDR:
-            rej, p, _, _ = multipletests(pvals = p, alpha = pval, method = 'fdr_bh')
-            
-        df_nn['p_val'] = p
-        df_enriched = df_nn[df_nn['p_val'] < pval].sort_values(by=['diff2_rank'])
-        if FDR:
-            df_enriched.rename({'p_val': 'q_val'}, axis=1, inplace=True)
-        if candidates is not None: #filter LR pairs among enriched pairs
+            rej, q, _, _ = multipletests(pvals = p, alpha = pval, method = 'fdr_bh') 
+            df_enriched['q_val'] = q
+            df_enriched = df_enriched[df_enriched['q_val'] < pval]
+        else:
+            df_enriched = df_enriched[df_enriched['p_val'] < pval]
+
+        if candidates is not None: 
             overlap = set(candidates).intersection(set(df_enriched.index))
-            df_enriched = df_enriched.loc[overlap].sort_values(by=['diff2_rank'])
+            df_enriched = df_enriched.loc[overlap].sort_values(by=['diff2'], ascending = False)
             df_enriched['enriched_rank'] = np.arange(len(df_enriched)) + 1
+            df_enriched['dir'] = (df_enriched['dist'].iloc[:, 1] > df_enriched['dist'].iloc[:, 0]).astype(int)
+            df_enriched['dir_sign'] = df_enriched['dir'].replace({1: u'\u2191', 0: u'\u2193'}) # obj1 (base) vs obj2, up: pairs interaction strengthed in base 
         print(f'\nTotal enriched: {len(df_enriched)} / {len(df_nn)}')
 
         return df_enriched
-    
-    else:
-        raise IndexError('require resulted dataframe with column \'diff2\' and \'diff2_rank\'') 
 
 
-def null_test(df_nn, candidates, pval = 5, plot = False):
-    
-    if ('dist' or 'correspondence_score') not in df_nn.columns:
-        raise IndexError('require resulted dataframe with column \'diff2\' and \'diff2_rank\'')
+def null_test(df_nn, candidates, filter_zeros = True, pval = 5, plot = False):
+    '''nonparametric left tail test to have enriched pairs'''
+    if ('dist' or 'correspondence') not in df_nn.columns:
+        raise IndexError('require resulted dataframe with column \'dist\' and \'correspondence\'')
         
     else:
         dist_test = df_nn[df_nn.index.isin(candidates)]
-        dist_null = df_nn[(~df_nn.index.isin(candidates)) & (df_nn['correspondence_score']!=0)]
+        # filter pairs with correspondence_score zero
+        if filter_zeros:
+            mask = df_nn['correspondence']!=0
+        else:
+            mask = np.ones(len(df_nn), dtype = bool)
+        dist_null = df_nn[(~df_nn.index.isin(candidates)) & (mask)]
         # print(len(dist_null))
 
         cut = np.percentile(np.asarray(dist_null['dist']), pval) # left tail
@@ -433,13 +446,13 @@ def null_test(df_nn, candidates, pval = 5, plot = False):
         df_enriched['enriched_rank'] = np.arange(len(df_enriched)) + 1
         
         if plot: 
-            plt.hist(dist_null['dist'], bins=1000, color='gray')
+            plt.hist(dist_null['dist'], bins=1000, color='royalblue')
             for d in dist_test['dist']:
                 if d < cut:
                     c='red'
                 else:
                     c='gray'
-                plt.axvline(d, linewidth=1, c=c)
+                plt.axvline(d, linewidth=0.5, c=c)
             plt.xlabel('distance')
             plt.show()
 
