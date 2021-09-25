@@ -310,7 +310,7 @@ def nn_aligned_dist(Xct_object, projections, dist_metric = 'euclidean', rank = F
 
 
 def filtered_nn_aligned_dist(df_nn, candidates):
-    '''filter to only L-R pairs'''
+    '''filter and rank only L-R pairs'''
     if 'diff2' in df_nn.columns:
         df_nn_filtered = df_nn.loc[candidates].sort_values(by=['diff2']) #dist difference^2 ranked L-R candidates
     else:
@@ -353,9 +353,7 @@ def KnK(Xct_object, ko_genelist, copy = True):
 def nn_aligned_dist_diff(df_nn1, df_nn2, rank = False):
     '''pair-wise difference of aligned distance'''
     print(f'computing pair-wise distance differences...')
-    df_nn2_concat = df_nn2.drop(['ligand', 'receptor'], axis=1)
-
-    df_nn_all = pd.concat([df_nn1, df_nn2_concat], axis=1) 
+    df_nn_all = pd.concat([df_nn1, df_nn2.drop(['ligand', 'receptor'], axis=1)], axis=1) 
     print('adding column \'diff2\'...')
     df_nn_all['diff2'] = np.square(df_nn_all['dist'].iloc[:, 0] - df_nn_all['dist'].iloc[:, 1]) #there are two 'dist' cols
     if rank:
@@ -366,7 +364,7 @@ def nn_aligned_dist_diff(df_nn1, df_nn2, rank = False):
     return df_nn_all
 
 
-def chi2_test(df_nn, df = 1, pval = 0.05, FDR = True, candidates = None): 
+def chi2_test(df_nn, df = 1, pval = 0.05, FDR = True, candidates = None, plot = False): 
     '''chi-sqaure left tail test to have enriched pairs'''
     if 'dist' not in df_nn.columns:
         raise IndexError('require resulted dataframe with column \'dist\'') 
@@ -376,7 +374,11 @@ def chi2_test(df_nn, df = 1, pval = 0.05, FDR = True, candidates = None):
         FC = dist2 / dist_mean
         p = scipy.stats.chi2.cdf(FC, df = df) # left tail CDF 
         df_enriched = df_nn.copy()
+        df_enriched['FC'] = FC
         df_enriched['p_val'] = p   
+        if plot:
+            fc_null = df_enriched[df_enriched['correspondence'] != 0]['FC']
+            df_test = df_enriched[df_enriched.index.isin(candidates)]
         
         if FDR:
             rej, q, _, _ = multipletests(pvals = p, alpha = pval, method = 'fdr_bh')
@@ -385,15 +387,26 @@ def chi2_test(df_nn, df = 1, pval = 0.05, FDR = True, candidates = None):
         else:
             df_enriched = df_enriched[df_enriched['p_val'] < pval]
         if candidates is not None: 
-            overlap = set(candidates).intersection(set(df_enriched.index))
-            df_enriched = df_enriched.loc[overlap].sort_values(by=['dist'])
+            df_enriched = df_enriched[df_enriched.index.isin(candidates)].sort_values(by=['dist'])
             df_enriched['enriched_rank'] = np.arange(len(df_enriched)) + 1
         print(f'\nTotal enriched: {len(df_enriched)} / {len(df_nn)}')
+
+        if plot: 
+            plt.hist(fc_null, bins=1000, color='royalblue')
+            enriched_bool = df_test.index.isin(df_enriched.index)
+            for fc, b in zip(df_test['FC'], enriched_bool):
+                if b:
+                    c = 'red'
+                else:
+                    c = 'gray'
+                plt.axvline(fc, ls=(0, (1, 1)), linewidth=0.5, alpha=0.8, c=c)
+            plt.xlabel('FC')
+            plt.show()
 
         return df_enriched
 
           
-def chi2_diff_test(df_nn, df = 1, pval = 0.05, FDR = True, candidates = None): 
+def chi2_diff_test(df_nn, df = 1, pval = 0.05, FDR = True, candidates = None, plot = False): 
     '''chi-sqaure right tail test to have pairs with significant distance difference'''
     if 'diff2' not in df_nn.columns:
         raise IndexError('require resulted dataframe with column \'diff2\'') 
@@ -404,7 +417,11 @@ def chi2_diff_test(df_nn, df = 1, pval = 0.05, FDR = True, candidates = None):
         FC = np.asarray(df_nn['diff2']) / dist_mean
         p = 1- scipy.stats.chi2.cdf(FC, df = df) # 1- left tail CDF 
         df_enriched = df_nn.copy()
+        df_enriched['FC'] = FC
         df_enriched['p_val'] = p
+
+        if plot:
+            df_test = df_enriched[df_enriched.index.isin(candidates)]
         
         if FDR:
             rej, q, _, _ = multipletests(pvals = p, alpha = pval, method = 'fdr_bh') 
@@ -414,12 +431,23 @@ def chi2_diff_test(df_nn, df = 1, pval = 0.05, FDR = True, candidates = None):
             df_enriched = df_enriched[df_enriched['p_val'] < pval]
 
         if candidates is not None: 
-            overlap = set(candidates).intersection(set(df_enriched.index))
-            df_enriched = df_enriched.loc[overlap].sort_values(by=['diff2'], ascending = False)
+            df_enriched = df_enriched[df_enriched.index.isin(candidates)].sort_values(by=['diff2'], ascending = False)
             df_enriched['enriched_rank'] = np.arange(len(df_enriched)) + 1
             df_enriched['dir'] = (df_enriched['dist'].iloc[:, 1] > df_enriched['dist'].iloc[:, 0]).astype(int)
             df_enriched['dir_sign'] = df_enriched['dir'].replace({1: u'\u2191', 0: u'\u2193'}) # obj1 (base) vs obj2, up: pairs interaction strengthed in base 
         print(f'\nTotal enriched: {len(df_enriched)} / {len(df_nn)}')
+
+        if plot: 
+            plt.hist(df_nn['diff2'], bins=1000, color='royalblue')
+            enriched_bool = df_test.index.isin(df_enriched.index)
+            for fc, b in zip(df_test['diff2'], enriched_bool):
+                if b:
+                    c = 'red'
+                else:
+                    c = 'gray'
+                plt.axvline(fc, ls=(0, (1, 1)), linewidth=0.5, alpha=0.8, c=c)
+            plt.xlabel('diff FC')
+            plt.show()
 
         return df_enriched
 
@@ -452,7 +480,7 @@ def null_test(df_nn, candidates, filter_zeros = True, pval = 5, plot = False):
                     c='red'
                 else:
                     c='gray'
-                plt.axvline(d, linewidth=0.5, c=c)
+                plt.axvline(d, ls=(0, (1, 1)), linewidth=0.5, alpha=0.8, c=c)
             plt.xlabel('distance')
             plt.show()
 

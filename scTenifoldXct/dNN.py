@@ -21,7 +21,7 @@ class Net(nn.Module):
         y_pred = self.linear3(h2_sigmoid)
         return y_pred
 
-def train_and_project(counts_np, w, dim = 2, steps = 1000, lr = 0.01, layers = None, verbose = True):
+def train_and_project(counts_np, w, dim = 3, steps = 1000, lr = 0.01, layers = None, verbose = True):
     '''manifold alignment by neural network:
         counts_np: list of counts in numpy array, gene by cell;
         w: correspondence;
@@ -70,13 +70,13 @@ def train_and_project(counts_np, w, dim = 2, steps = 1000, lr = 0.01, layers = N
         #print('outputs', outputs.shape)
         
         # Project the output onto Stiefel Manifold
-        u, s, v = torch.svd(outputs, some=True)
+        u, _, v = torch.svd(outputs, some=True)
         proj_outputs = u@v.t()
         
         # Compute loss
         loss = torch.trace(proj_outputs.t()@L@proj_outputs)
         
-        if t == 0 or t%100 == 99:
+        if t == 0 or t%10 == 9:
             if verbose:
                 print(t+1, loss.item())
             losses.append(loss.item())
