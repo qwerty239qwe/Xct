@@ -3,4 +3,5 @@ __pycache__
 data/.ipynb_checkpoints
 data/*.h5ad
 data/*.csv
+notebooks/arxiv/
 venv/
