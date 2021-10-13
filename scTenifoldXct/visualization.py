@@ -13,9 +13,9 @@ visual_style_common["vertex_label_dist"] = 0.0
 visual_style_common["edge_curved"] = 0.1
 # visual_style_common["edge_arrow_size"] = 1
 # visual_style_common["edge_arrow_width"] = 0.3
-visual_style_common["margin"] = 50
+visual_style_common["margin"] = 70
 
-def plot_pcNet(Xct_obj, view, gene_names, match_fig = None, top_edges = 20, remove_isolated_nodes = True, bbox_scale = 1, 
+def plot_pcNet(Xct_obj, view, gene_names, match_fig = None, top_edges = 20, remove_isolated_nodes = True, bbox_scale = 1, mark_color = "whitesmoke",
             show = True, saveas = None, verbose = False, edge_width_scale = None, layout = 'large', visual_style = visual_style_common.copy()):
     '''visualize single cell type GRN, only showing direct edges associated with target genes'''
     if view == 'sender':
@@ -96,6 +96,7 @@ def plot_pcNet(Xct_obj, view, gene_names, match_fig = None, top_edges = 20, remo
         visual_style["edge_width"] = [edge_width_scale*abs(w) for w in g.es['weight']] 
         visual_style["edge_color"] = ['red' if w>0 else 'blue' for w in g.es['weight']]
         visual_style["layout"] = layout
+        visual_style["mark_groups"] = [(list(range(0, len(g.vs))), mark_color)] 
         
         if show:
             if saveas is None:
@@ -108,7 +109,7 @@ def plot_pcNet(Xct_obj, view, gene_names, match_fig = None, top_edges = 20, remo
             return g
 
 
-def plot_XNet(g1, g2, Xct_pair, saveas = None, verbose = False, edge_width_scale = None, edge_width_max = 5, layout = 'kk', bbox_scale = 1,
+def plot_XNet(g1, g2, Xct_pair, saveas = None, verbose = False, edge_width_scale = None, edge_width_max = 5, layout = 'kk', bbox_scale = 1, mark_color = ["whitesmoke", "whitesmoke"],
             visual_style = visual_style_common.copy()):
     '''visualize merged GRN from sender and receiver cell types,
         use edge_width_scale to make two graphs width comparable (both using absolute values)'''
@@ -132,9 +133,8 @@ def plot_XNet(g1, g2, Xct_pair, saveas = None, verbose = False, edge_width_scale
     visual_style["edge_width"] = [edge_width_scale*abs(w) if edge_width_scale*abs(w) < edge_width_max else edge_width_max for w in gg.es['weight']] 
     visual_style["edge_color"] = ['red' if (w>0)&(w<=1) else ('maroon' if w>1 else 'blue') for w in gg.es['weight']]
     visual_style["layout"] = layout
-    visual_style["mark_groups"] = [(list(range(0, len(g1.vs))), "whitesmoke")] + [(list(range(len(g1.vs), len(g1.vs)+len(g2.vs))), "whitesmoke")]
+    visual_style["mark_groups"] = [(list(range(0, len(g1.vs))), mark_color[0])] + [(list(range(len(g1.vs), len(g1.vs)+len(g2.vs))), mark_color[1])]
  
-    # random.seed(0) #layout
     if saveas is None:
         return ig.plot(gg, **visual_style)
     else:

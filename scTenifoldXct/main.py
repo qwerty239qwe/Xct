@@ -261,12 +261,12 @@ def get_candidates(df_filtered):
 
 def get_counts_np(*Xct_objects):
     '''return a list of counts in numpy array, gene by cell'''
-    if not all(isinstance(obj, Xct) for obj in Xct_objects):
-        raise TypeError('input Xct object(s)')
-    else:
-        counts_np = list(itertools.chain(*([obj._X[0].T, obj._X[1].T] for obj in Xct_objects))) #gene by cell
-        counts_np = [counts.toarray() if scipy.sparse.issparse(counts) else counts for counts in counts_np]
-        return counts_np # a list
+    # if not all(isinstance(obj, Xct) for obj in Xct_objects):
+    #     raise TypeError('input Xct object(s)')
+    # else:
+    counts_np = list(itertools.chain(*([obj._X[0].T, obj._X[1].T] for obj in Xct_objects))) #gene by cell
+    counts_np = [counts.toarray() if scipy.sparse.issparse(counts) else counts for counts in counts_np]
+    return counts_np # a list
 
 
 def plot_nn_loss(losses):
@@ -371,7 +371,7 @@ def chi2_test(df_nn, df = 1, pval = 0.05, FDR = True, candidates = None, plot = 
     else:
         dist2 = np.square(np.asarray(df_nn['dist']))
         dist_mean = np.mean(dist2)
-        FC = dist2 / dist_mean
+        FC = df * dist2 / dist_mean
         p = scipy.stats.chi2.cdf(FC, df = df) # left tail CDF 
         df_enriched = df_nn.copy()
         df_enriched['FC'] = FC
@@ -414,7 +414,7 @@ def chi2_diff_test(df_nn, df = 1, pval = 0.05, FDR = True, candidates = None, pl
     else:
         #dist2 = np.square(np.asarray(df_nn['diff']))
         dist_mean = np.mean(df_nn['diff2'])
-        FC = np.asarray(df_nn['diff2']) / dist_mean
+        FC = df * np.asarray(df_nn['diff2']) / dist_mean
         p = 1- scipy.stats.chi2.cdf(FC, df = df) # 1- left tail CDF 
         df_enriched = df_nn.copy()
         df_enriched['FC'] = FC
@@ -452,12 +452,14 @@ def chi2_diff_test(df_nn, df = 1, pval = 0.05, FDR = True, candidates = None, pl
         return df_enriched
 
 
-def null_test(df_nn, candidates, filter_zeros = True, pval = 5, plot = False):
+def null_test(df_nn, candidates, filter_zeros = True, pct = 0.025, plot = False):
     '''nonparametric left tail test to have enriched pairs'''
     if ('dist' or 'correspondence') not in df_nn.columns:
         raise IndexError('require resulted dataframe with column \'dist\' and \'correspondence\'')
         
     else:
+        # df_enriched = df_nn.copy()
+
         dist_test = df_nn[df_nn.index.isin(candidates)]
         # filter pairs with correspondence_score zero
         if filter_zeros:
@@ -466,14 +468,16 @@ def null_test(df_nn, candidates, filter_zeros = True, pval = 5, plot = False):
             mask = np.ones(len(df_nn), dtype = bool)
         dist_null = df_nn[(~df_nn.index.isin(candidates)) & (mask)]
         # print(len(dist_null))
+ 
+        p = [scipy.stats.percentileofscore(dist_null['dist'], i)/100 for i in dist_test['dist']]  
+        dist_test['p_val'] = p 
 
-        cut = np.percentile(np.asarray(dist_null['dist']), pval) # left tail
-
-        df_enriched = dist_test[dist_test['dist'] < cut].sort_values(by=['dist'])
+        df_enriched = dist_test[dist_test['p_val'] < pct].sort_values(by=['dist'])
         print(f'\nTotal enriched: {len(df_enriched)} / {len(df_nn)}')    
         df_enriched['enriched_rank'] = np.arange(len(df_enriched)) + 1
         
         if plot: 
+            cut = np.percentile(np.asarray(dist_null['dist']), pct) # left tail
             plt.hist(dist_null['dist'], bins=1000, color='royalblue')
             for d in dist_test['dist']:
                 if d < cut:
