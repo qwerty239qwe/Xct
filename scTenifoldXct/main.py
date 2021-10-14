@@ -452,7 +452,7 @@ def chi2_diff_test(df_nn, df = 1, pval = 0.05, FDR = True, candidates = None, pl
         return df_enriched
 
 
-def null_test(df_nn, candidates, filter_zeros = True, pct = 0.025, plot = False):
+def null_test(df_nn: pd.DataFrame, candidates, filter_zeros = True, pct = 0.025, plot = False):
     '''nonparametric left tail test to have enriched pairs'''
     if ('dist' or 'correspondence') not in df_nn.columns:
         raise IndexError('require resulted dataframe with column \'dist\' and \'correspondence\'')
@@ -467,22 +467,14 @@ def null_test(df_nn, candidates, filter_zeros = True, pct = 0.025, plot = False)
         else:
             mask = np.ones(len(df_nn), dtype = bool)
         dist_null = df_nn[(~df_nn.index.isin(candidates)) & (mask)]
-        # print(len(dist_null))
-
-        dist_null = dist_null['dist'].to_frame()
-        dist_null['rank'] = dist_null['dist'].rank(pct=True)
-        dist_null = dist_null.sort_values('dist', ascending=True)
-
-        p = dist_null.iloc[np.searchsorted(dist_null['dist'].values.flatten(),
-                                           [i for i in dist_test['dist']], "right"), 1]
-        dist_test['p_val'] = p 
-
+        print(len(dist_null))
+        dist_test['p_val'] = dist_test['dist'].apply(lambda x: scipy.stats.percentileofscore(dist_null['dist'], x) / 100)
         df_enriched = dist_test[dist_test['p_val'] < pct].sort_values(by=['dist'])
         print(f'\nTotal enriched: {len(df_enriched)} / {len(df_nn)}')    
         df_enriched['enriched_rank'] = np.arange(len(df_enriched)) + 1
         
         if plot: 
-            cut = np.percentile(np.asarray(dist_null['dist']), pct) # left tail
+            cut = np.percentile(dist_null['dist'].values, pct) # left tail
             plt.hist(dist_null['dist'], bins=1000, color='royalblue')
             for d in dist_test['dist']:
                 if d < cut:
