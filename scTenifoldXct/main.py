@@ -468,8 +468,13 @@ def null_test(df_nn, candidates, filter_zeros = True, pct = 0.025, plot = False)
             mask = np.ones(len(df_nn), dtype = bool)
         dist_null = df_nn[(~df_nn.index.isin(candidates)) & (mask)]
         # print(len(dist_null))
- 
-        p = [scipy.stats.percentileofscore(dist_null['dist'], i)/100 for i in dist_test['dist']]  
+
+        dist_null = dist_null['dist'].to_frame()
+        dist_null['rank'] = dist_null['dist'].rank(pct=True)
+        dist_null = dist_null.sort_values('dist', ascending=True)
+
+        p = dist_null.iloc[np.searchsorted(dist_null['dist'].values.flatten(),
+                                           [i for i in dist_test['dist']], "right"), 1]
         dist_test['p_val'] = p 
 
         df_enriched = dist_test[dist_test['p_val'] < pct].sort_values(by=['dist'])
