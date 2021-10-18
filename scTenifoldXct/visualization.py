@@ -109,7 +109,7 @@ def plot_pcNet(Xct_obj, view, gene_names, match_fig = None, top_edges = 20, remo
             return g
 
 
-def plot_XNet(g1, g2, Xct_pair, saveas = None, verbose = False, edge_width_scale = None, edge_width_max = 5, layout = 'kk', bbox_scale = 1, mark_color = ["whitesmoke", "whitesmoke"],
+def plot_XNet(g1, g2, Xct_pair, df_enriched = None, saveas = None, verbose = False, edge_width_scale = None, edge_width_max = 5, layout = 'kk', bbox_scale = 1, mark_color = ["whitesmoke", "whitesmoke"],
             visual_style = visual_style_common.copy()):
     '''visualize merged GRN from sender and receiver cell types,
         use edge_width_scale to make two graphs width comparable (both using absolute values)'''
@@ -119,7 +119,16 @@ def plot_XNet(g1, g2, Xct_pair, saveas = None, verbose = False, edge_width_scale
 
     for pair in Xct_pair:
         edges_idx = (gg.vs.find(name = pair[0]).index, gg.vs.find(name = pair[1]).index) # from to
-        gg.add_edge(edges_idx[0], edges_idx[1], weight = 1.02) # set weight > 1 and be the max
+        if df_enriched is None:
+            w = 1.02
+        else:
+            if 'dist' not in df_enriched.columns:
+                raise IndexError('require resulted dataframe with column \'dist\'')
+            else:
+                w_list = np.asarray(df_enriched['dist'])
+                w_list = w_list*1.02/max(w_list)
+                w = w_list[get_Xct_pairs(df_enriched).index(pair)]
+        gg.add_edge(edges_idx[0], edges_idx[1], weight = w) # set weight > 1 and be the max (default: 1.02)
         if verbose:
             print(f'edge from {pair[0]} to {pair[1]} added')
     
