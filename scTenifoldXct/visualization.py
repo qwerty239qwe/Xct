@@ -121,13 +121,13 @@ def plot_XNet(g1, g2, Xct_pair, df_enriched = None, saveas = None, verbose = Fal
     for pair in Xct_pair:
         edges_idx = (gg.vs.find(name = pair[0]).index, gg.vs.find(name = pair[1]).index) # from to
         if df_enriched is None:
-            w = 1.02
+            w = 1.20
         else:
-            if 'dist' not in df_enriched.columns:
-                raise IndexError('require resulted dataframe with column \'dist\'')
+            if 'correspondence' not in df_enriched.columns:
+                raise IndexError('require resulted dataframe with column \'correspondence\'')
             else:
-                w_list = np.asarray(df_enriched['dist'])
-                w_list = w_list*1.02/max(w_list)
+                w_list = np.asarray(df_enriched['correspondence'])
+                w_list = w_list*1.20/max(w_list)
                 w = w_list[get_Xct_pairs(df_enriched).index(pair)]
         gg.add_edge(edges_idx[0], edges_idx[1], weight = w) # set weight > 1 and be the max (default: 1.02)
         added_e += 1 # source and target both found 
@@ -144,7 +144,6 @@ def plot_XNet(g1, g2, Xct_pair, df_enriched = None, saveas = None, verbose = Fal
         edge_width_scale = 3/max(np.abs(gg.es['weight']))
     visual_style["edge_width"] = [edge_width_scale*abs(w) if edge_width_scale*abs(w) < edge_width_max else edge_width_max for w in gg.es['weight']] 
     visual_style["edge_color"] = ['red' if w>0 else 'blue' for w in gg.es['weight'][:-added_e]] + added_e * ['maroon'] # interact edges color
-    print(len(visual_style["edge_color"]))
     visual_style["layout"] = layout
     visual_style["mark_groups"] = [(list(range(0, len(g1.vs))), mark_color[0])] + [(list(range(len(g1.vs), len(g1.vs)+len(g2.vs))), mark_color[1])]
  
