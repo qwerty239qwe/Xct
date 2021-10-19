@@ -25,7 +25,7 @@ def squiggle(x):
 
 def gaussian_clusters(num_clusters, total_pts):
   n = total_pts // num_clusters
-  clusters = [randn(n,2) + uniform(-9,9,2) for _ in xrange(num_clusters)]
+  clusters = [randn(n,2) + uniform(-9,9,2) for _ in range(num_clusters)]
   return np.concatenate(clusters,0)
 
 
