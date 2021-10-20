@@ -14,7 +14,7 @@ def xct():
     ada.layers['raw'] = np.asarray(ada.X, dtype=int)
     sc.pp.log1p(ada)
     ada.layers['log1p'] = ada.X.copy()
-    return Xct(ada, '14Mo', '15Mo', build_GRN=True, save_GRN=True, pcNet_name='Net_for_Test', queryDB=None, verbose=True)
+    return Xct(ada, '14Mo', '15Mo', build_GRN=True, save_GRN=False, pcNet_name='Net_for_Test', queryDB=None, verbose=True)
 
 
 @pytest.fixture(scope="session")
