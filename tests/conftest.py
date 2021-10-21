@@ -3,8 +3,29 @@ import pytest
 import numpy as np
 import scanpy as sc
 
-from scTenifoldXct.main import Xct
+from scTenifoldXct.main import Xct, get_candidates
 from scTenifoldXct.main import get_counts_np
+
+
+@pytest.fixture(scope="session")
+def ada_skin():
+    return sc.read_h5ad("../../data/LS_processed.h5ad")
+
+
+@pytest.fixture(scope="session")
+def xct_skin(ada):
+    return Xct(ada, 'Inflam. FIB', 'Inflam. DC', build_GRN = False, pcNet_name = 'skin_net', verbose = True)
+
+
+@pytest.fixture(scope="session")
+def df_skin(xct_skin):
+    return xct_skin.fill_metric()
+
+
+@pytest.fixture()
+def candidates_skin(df_skin):
+    candidates = get_candidates(df_skin)
+    return candidates
 
 
 @pytest.fixture(scope="session")
@@ -20,7 +41,7 @@ def xct():
 @pytest.fixture(scope="session")
 def candidates(xct):
     df1 = xct.fill_metric()
-    return xct.get_candidates(df1)
+    return get_candidates(df1)
 
 
 @pytest.fixture(scope="session")

@@ -4,7 +4,7 @@ import itertools
 import pandas as pd
 import numpy as np
 
-from scTenifoldXct.main import null_test
+from scTenifoldXct.main import null_test, nn_aligned_dist, chi2_test
 
 
 def generate_fake_df_nn(n_ligand=3000, n_receptors=3000, n_cands=200):
@@ -23,6 +23,13 @@ def generate_fake_df_nn(n_ligand=3000, n_receptors=3000, n_cands=200):
     return df, np.random.choice(df.index, size=(n_cands,), replace=False)
 
 
+@pytest.fixture(scope="package")
+def df_nn_skin(xct_skin, ma_net_skin):
+    projections = ma_net_skin.proj_outputs_np
+    df_nn = nn_aligned_dist(xct_skin, projections)
+    return df_nn
+
+
 @pytest.mark.parametrize("df_nn,candidates", [
     generate_fake_df_nn(3000, 3000, 200),
     generate_fake_df_nn(1000, 1000, 200),
@@ -30,3 +37,7 @@ def generate_fake_df_nn(n_ligand=3000, n_receptors=3000, n_cands=200):
 @pytest.mark.parametrize("filter_zeros", [True])
 def test_null_test(df_nn, candidates, filter_zeros):
     null_test(df_nn=df_nn, candidates=candidates, filter_zeros=filter_zeros)
+
+
+def test_chi2_test(df_nn_skin, candidates_skin):
+    chi2_test(df_nn_skin, df=3, pval=0.05, FDR=True, candidates=candidates_skin, plot=True)
