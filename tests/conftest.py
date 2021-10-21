@@ -13,8 +13,8 @@ def ada_skin():
 
 
 @pytest.fixture(scope="session")
-def xct_skin(ada):
-    return Xct(ada, 'Inflam. FIB', 'Inflam. DC', build_GRN = False, pcNet_name = 'skin_net', verbose = True)
+def xct_skin(ada_skin):
+    return Xct(ada_skin, 'Inflam. FIB', 'Inflam. DC', build_GRN = False, pcNet_name = 'skin_net', verbose = True)
 
 
 @pytest.fixture(scope="session")
@@ -28,6 +28,7 @@ def candidates_skin(df_skin):
     return candidates
 
 
+# small dataset
 @pytest.fixture(scope="session")
 def xct():
     ada = sc.datasets.paul15()[:, :100]  # raw counts
