@@ -2,6 +2,7 @@ import pytest
 
 import numpy as np
 import scanpy as sc
+import scipy
 
 from scTenifoldXct.main import Xct, get_candidates
 from scTenifoldXct.main import get_counts_np
@@ -9,7 +10,13 @@ from scTenifoldXct.main import get_counts_np
 
 @pytest.fixture(scope="session")
 def ada_skin():
-    return sc.read_h5ad("../../data/LS_processed.h5ad")
+    ada = sc.read_h5ad("../../data/LS.h5ad")
+    data = scipy.sparse.csr_matrix.toarray(ada.X)
+    counts = np.asarray(np.expm1(data), dtype=int)
+    ada.layers['raw'] = counts
+    ada.layers['log1p'] = data
+    HVG_i = np.argsort(np.asarray(ada.var['vst.variance.standardized']))[-3000:]
+    return ada[:, HVG_i]
 
 
 @pytest.fixture(scope="session")
