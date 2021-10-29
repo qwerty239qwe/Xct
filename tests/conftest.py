@@ -10,7 +10,7 @@ from scTenifoldXct.main import get_counts_np
 
 @pytest.fixture(scope="session")
 def ada_skin():
-    ada = sc.read_h5ad("../../data/LS.h5ad")
+    ada = sc.read_h5ad("./data/LS.h5ad")
     data = scipy.sparse.csr_matrix.toarray(ada.X)
     counts = np.asarray(np.expm1(data), dtype=int)
     ada.layers['raw'] = counts
