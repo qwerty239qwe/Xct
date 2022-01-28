@@ -464,7 +464,7 @@ def chi2_diff_test(df_nn, df = 1, pval = 0.05, FDR = True, candidates = None, pl
         return df_enriched
 
 
-def null_test(df_nn: pd.DataFrame, candidates, filter_zeros = True, pct = 0.025, plot = False):
+def null_test(df_nn: pd.DataFrame, candidates, filter_zeros = True, pct = 0.05, plot = False):
     '''nonparametric left tail test to have enriched pairs'''
     if ('dist' or 'correspondence') not in df_nn.columns:
         raise IndexError('require resulted dataframe with column \'dist\' and \'correspondence\'')
