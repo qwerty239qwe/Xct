@@ -6,6 +6,7 @@ from anndata._core.views import ArrayView
 import scipy
 from statsmodels.stats.multitest import multipletests
 import itertools
+import os
 import warnings
 
 warnings.filterwarnings("ignore")
@@ -129,24 +130,35 @@ class Xct(Xct_metrics):
             
         self.ref = self.fill_metric()
         self.genes_index = self.get_index(DB = self.ref)
+        pcNet_path_A = f'./data/{pcNet_name}_A.csv'
+        pcNet_path_B = f'./data/{pcNet_name}_B.csv'
         if build_GRN: 
             if verbose:
                 print('building GRN...')
-            self._net_A = pcNet(ada_A.X, nComp=5, symmetric=True)
+            if os.path.isfile(pcNet_path_A):
+                self._net_A = np.genfromtxt(pcNet_path_A, delimiter="\t")
+            else:
+                self._net_A = pcNet(ada_A.X, nComp=5, symmetric=True)
             if verbose:
                 print('GRN of Cell A has been built, start building GRN of Cell B...')
-            self._net_B = pcNet(ada_B.X, nComp=5, symmetric=True)
+
+            if os.path.isfile(pcNet_path_B):
+                self._net_B = np.genfromtxt(pcNet_path_B, delimiter="\t")
+            else:         
+                self._net_B = pcNet(ada_B.X, nComp=5, symmetric=True)
             if verbose:
                 print('GRN of Cell B has been built, building correspondence...')
+
             if save_GRN:
-                np.savetxt(f'../data/{pcNet_name}_A.csv', self._net_A, delimiter="\t")
-                np.savetxt(f'../data/{pcNet_name}_B.csv', self._net_B, delimiter="\t")
+                os.makedirs('./data', exist_ok = True) # create dir 'data'
+                np.savetxt(pcNet_path_A, self._net_A, delimiter="\t")
+                np.savetxt(pcNet_path_B, self._net_B, delimiter="\t")
         else:
             try:
                 if verbose:
                     print('loading GRNs...')
-                self._net_A = np.genfromtxt(f'../data/{pcNet_name}_A.csv', delimiter="\t")
-                self._net_B = np.genfromtxt(f'../data/{pcNet_name}_B.csv', delimiter="\t")
+                self._net_A = np.genfromtxt(pcNet_path_A, delimiter="\t")
+                self._net_B = np.genfromtxt(pcNet_path_B, delimiter="\t")
             except ImportError:
                 print('require pcNet_name where csv files saved in with tab as delimiter')
         if verbose:
@@ -452,7 +464,7 @@ def chi2_diff_test(df_nn, df = 1, pval = 0.05, FDR = True, candidates = None, pl
         return df_enriched
 
 
-def null_test(df_nn: pd.DataFrame, candidates, filter_zeros = True, pct = 0.025, plot = False):
+def null_test(df_nn: pd.DataFrame, candidates, filter_zeros = True, pct = 0.05, plot = False):
     '''nonparametric left tail test to have enriched pairs'''
     if ('dist' or 'correspondence') not in df_nn.columns:
         raise IndexError('require resulted dataframe with column \'dist\' and \'correspondence\'')
@@ -467,7 +479,7 @@ def null_test(df_nn: pd.DataFrame, candidates, filter_zeros = True, pct = 0.025,
         else:
             mask = np.ones(len(df_nn), dtype = bool)
         dist_null = df_nn[(~df_nn.index.isin(candidates)) & (mask)]
-        print(len(dist_null))
+   
         dist_test['p_val'] = dist_test['dist'].apply(lambda x: scipy.stats.percentileofscore(dist_null['dist'], x) / 100)
         df_enriched = dist_test[dist_test['p_val'] < pct].sort_values(by=['dist'])
         print(f'\nTotal enriched: {len(df_enriched)} / {len(df_nn)}')    

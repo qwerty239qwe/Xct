@@ -12,7 +12,7 @@ visual_style_common["vertex_label_size"] = 12
 visual_style_common["vertex_label_dist"] = 0.0
 visual_style_common["edge_curved"] = 0.1
 # visual_style_common["edge_arrow_size"] = 1
-# visual_style_common["edge_arrow_width"] = 0.3
+# visual_style_common["edge_arrow_width"] = 1
 visual_style_common["margin"] = 70
 
 def plot_pcNet(Xct_obj, view, gene_names, match_fig = None, top_edges = 20, remove_isolated_nodes = True, bbox_scale = 1, mark_color = "whitesmoke",
@@ -46,7 +46,7 @@ def plot_pcNet(Xct_obj, view, gene_names, match_fig = None, top_edges = 20, remo
         mat = net_f.values.copy()
         gene_names_f = net_f.index.tolist()
         del net_f
-        g = ig.Graph.Weighted_Adjacency(mat, mode='undirected', attr="weight", loops=True)
+        g = ig.Graph.Weighted_Adjacency(np.tril(mat), mode='directed', attr="weight", loops=True) # upper triangular for directionality
         g.vs["name"] = gene_names_f
         g.vs["is_TF"] = is_TF
         
@@ -95,6 +95,7 @@ def plot_pcNet(Xct_obj, view, gene_names, match_fig = None, top_edges = 20, remo
             edge_width_scale = 3/max(np.abs(g.es['weight']))
         visual_style["edge_width"] = [edge_width_scale*abs(w) for w in g.es['weight']] 
         visual_style["edge_color"] = ['red' if w>0 else 'blue' for w in g.es['weight']]
+        visual_style["edge_arrow_size"] = [1e-12] * len(g.es)
         visual_style["layout"] = layout
         visual_style["mark_groups"] = [(list(range(0, len(g.vs))), mark_color)] 
         
@@ -144,6 +145,7 @@ def plot_XNet(g1, g2, Xct_pair, df_enriched = None, saveas = None, verbose = Fal
         edge_width_scale = 3/max(np.abs(gg.es['weight']))
     visual_style["edge_width"] = [edge_width_scale*abs(w) if edge_width_scale*abs(w) < edge_width_max else edge_width_max for w in gg.es['weight']] 
     visual_style["edge_color"] = ['red' if w>0 else 'blue' for w in gg.es['weight'][:-added_e]] + added_e * ['maroon'] # interact edges color
+    visual_style["edge_arrow_size"] = [1e-12] * len(gg.es[:-added_e]) + added_e * [1]
     visual_style["layout"] = layout
     visual_style["mark_groups"] = [(list(range(0, len(g1.vs))), mark_color[0])] + [(list(range(len(g1.vs), len(g1.vs)+len(g2.vs))), mark_color[1])]
  
