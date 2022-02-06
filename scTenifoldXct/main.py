@@ -1,3 +1,5 @@
+from typing import List
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -18,6 +20,38 @@ except ImportError:
     print('module \'pcNet\' not found')
 
 
+class scTenifoldXct:
+    def __init__(self,
+                 data,
+                 cell_names: List[str],
+                 obs_label,
+                 species: str,
+                 GRN_file_name,
+                 rebuild_GRN=False,
+                 query_DB=None,
+                 verbose=True):
+        if species.lower() not in ["human", "mouse"]:
+            raise ValueError("species must be human or mouse")
+
+        self.data = data
+        self._cell_names = cell_names
+        self._species = species
+        self._LRs = self._load_db_data()
+        # self._TFs = self._load_db_data() # is this an unused db?
+
+    def load_data(self, data, cell_name, obs_label):
+        pass
+
+    def _load_db_data(self, file_path, subsets):
+        df = pd.read_csv(file_path)
+        df = df.loc[:, subsets] if subsets is not None else df
+        if self._species == "mouse":
+            for c in df.columns:
+                df[c] = df[c].str.capitalize()
+
+        return df
+
+
 class Xct_metrics():
     '''require adata with layer 'raw' (counts) and 'log1p' (normalized), cell labels in obs 'ident' '''
     #__slots__ = ('_specis', 'genes', 'LRs', '_genes_index_DB', 'TFs')
@@ -30,7 +64,6 @@ class Xct_metrics():
             self.LRs = self.LR_DB()
             self._genes_index_DB = self.get_index(DB = self.LRs)
             self.TFs = self.TF_DB()
-
     
     def LR_DB(self):
         '''load omnipath DB for L-R pairs'''
@@ -281,14 +314,6 @@ def get_counts_np(*Xct_objects):
     return counts_np # a list
 
 
-def plot_nn_loss(losses):
-    '''plot loss every 100 steps'''
-    plt.figure(figsize=(6, 5), dpi=80)
-    plt.plot(np.arange(len(losses))*100, losses)
-    #plt.savefig('fig.png', dpi=80)
-    plt.show()
-
-
 def _pair_distance(Xct_object, projections, dist_metric = 'euclidean'): 
     '''distances of each directional pair in latent space'''
     X = projections[:len(projections)//2, :]
@@ -296,8 +321,8 @@ def _pair_distance(Xct_object, projections, dist_metric = 'euclidean'):
     dist = scipy.spatial.distance.cdist(X, Y, metric = dist_metric)
     dist_df = pd.DataFrame(dist, index = Xct_object.genes_names[0], columns = Xct_object.genes_names[1])
 
-    return dist_df    
- 
+    return dist_df
+
 
 def nn_aligned_dist(Xct_object, projections, dist_metric = 'euclidean', rank = False):
     '''output info of each pair'''
