@@ -1,15 +1,18 @@
 from typing import List
+import itertools
+import os
+import warnings
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import scanpy as sc
 from anndata._core.views import ArrayView
+import anndata
 import scipy
 from statsmodels.stats.multitest import multipletests
-import itertools
-import os
-import warnings
+
 
 warnings.filterwarnings("ignore")
 sc.settings.verbosity = 0
@@ -24,7 +27,7 @@ class scTenifoldXct:
     def __init__(self,
                  data,
                  cell_names: List[str],
-                 obs_label,
+                 obs_label,  # ident
                  species: str,
                  GRN_file_name,
                  rebuild_GRN=False,
@@ -33,14 +36,50 @@ class scTenifoldXct:
         if species.lower() not in ["human", "mouse"]:
             raise ValueError("species must be human or mouse")
 
-        self.data = data
+        if query_DB is not None and query_DB not in ['comb', 'pairs']:
+            raise ValueError('queryDB using the keyword None, \'comb\' or \'pairs\'')
+
+        self._metrics = ["mean", "var"]
+
+        self.verbose = verbose
         self._cell_names = cell_names
+        self._cell_data_dic, self._cell_metric_dict = {}, {}
+        self.genes = None
+        for name in self._cell_names:
+            self.load_data(data, name, obs_label)
+
         self._species = species
-        self._LRs = self._load_db_data()
-        # self._TFs = self._load_db_data() # is this an unused db?
+        self._LRs = self._load_db_data(Path(__file__).parent.parent / Path("data/LR.csv"),
+                                       ['ligand', 'receptor'])
+        # self._TFs = self._load_db_data() # is this an unused db data?
+
+        # fill metrics
+
+        # load pcnet
+
+
+    @staticmethod
+    def _zero_out_w(w, LR_idx):
+        lig_idx = np.ravel(np.asarray(LR_idx[:, 0]))
+        lig_idx = list(np.unique(lig_idx[lig_idx != 0]) - 1)
+        rec_idx = np.ravel(np.asarray(LR_idx[:, 1]))
+        rec_idx = list(np.unique(rec_idx[rec_idx != 0]) - 1)
+        # reverse select and zeros LR that not in idx list
+        mask_lig = np.ones(w.shape[0], dtype=np.bool)
+        mask_lig[lig_idx] = 0
+        mask_rec = np.ones(w.shape[1], dtype=np.bool)
+        mask_rec[rec_idx] = 0
+        w[mask_lig, :] = 0
+        w[:, mask_rec] = 0
+        assert np.count_nonzero(w) == len(lig_idx) * len(rec_idx)
+        return w
 
     def load_data(self, data, cell_name, obs_label):
-        pass
+        if isinstance(data, anndata.AnnData):
+            self.genes = data.var_names
+            self._cell_data_dic[cell_name] = data[data.obs[obs_label] == cell_name, :]
+            self._cell_metric_dict[cell_name] = {}
+            self._cell_metric_dict[cell_name] = self._get_metric(self._cell_data_dic[cell_name])
 
     def _load_db_data(self, file_path, subsets):
         df = pd.read_csv(file_path)
@@ -50,6 +89,69 @@ class scTenifoldXct:
                 df[c] = df[c].str.capitalize()
 
         return df
+
+    def _get_metric(self, adata: ArrayView):  # require normalized data
+        '''compute metrics for each gene'''
+        data_norm = adata.X.toarray() if scipy.sparse.issparse(adata.X) else adata.X.copy()  # adata.layers['log1p']
+        if self.verbose:
+            print('(cell, feature):', data_norm.shape)
+        if (data_norm % 1 != 0).any():  # check space: True for log (float), False for counts (int)
+            mean = np.mean(data_norm, axis=0)  # .toarray()
+            var = np.var(data_norm, axis=0)  # .toarray()
+            return {"mean": dict(zip(self.genes, mean)),
+                    "var": dict(zip(self.genes, var))} # , dispersion, cv
+        raise ValueError("require log data")
+
+    def fill_metric(self, ref_obj=None):
+        val_df = pd.DataFrame()
+        for c in self._LRs.columns:
+            for m in self._metrics:
+                val_df[f"{m}_L"] = self._LRs[c].map(self._cell_metric_dict[self._cell_names[0]]).fillna(0.)
+                val_df[f"{m}_R"] = self._LRs[c].map(self._cell_metric_dict[self._cell_names[1]]).fillna(0.)
+
+        # TODO: refactor this
+        if ref_obj is None:
+            df = pd.concat([self._LRs, val_df], axis=1)  # concat 1:1 since sharing same index
+            mask1 = (df['mean_L'] > 0) & (df['mean_R'] > 0)  # filter 0 (none or zero expression) of LR
+            df = df[mask1]
+        else:
+            ref_DB = self._LRs.iloc[ref_obj.ref.index, :].reset_index(drop=True, inplace=False)  # match index
+            df = pd.concat([ref_DB, val_df], axis=1)
+            df.set_index(pd.Index(ref_obj.ref.index), inplace=True)
+
+        if self.verbose:
+            print('Selected {} LR pairs'.format(df.shape[0]))
+
+        return df
+
+
+    def _build_w(self, alpha, queryDB=None, scale_w=True):
+        '''build w: 3 modes, default None will not query the DB and use all pair-wise corresponding scores'''
+        # (1-a)*u^2 + a*var
+        metric_A_temp = ((1 - alpha) * np.square(self._metric_A[0]) + alpha * (self._metric_A[1]))[:, None]
+        metric_B_temp = ((1 - alpha) * np.square(self._metric_B[0]) + alpha * (self._metric_B[1]))[None, :]
+        # print(metric_A_temp.shape, metric_B_temp.shape)
+        w12 = metric_A_temp @ metric_B_temp
+        w12_orig = w12.copy()
+        if queryDB is not None:
+            if queryDB == 'comb':
+                # ada.var index of LR genes (the intersect of DB and object genes, no pair relationship maintained)
+                LR_idx_toUse = self._genes_index_DB
+                w12 = self._zero_out_w(w12, LR_idx_toUse)
+            elif queryDB == 'pairs':
+                # maintain L-R pair relationship, both > 0
+                LR_idx_toUse = self._genes_index_DB[(self._genes_index_DB[:, 0] > 0) & (self._genes_index_DB[:, 1] > 0)]
+                w12 = self._zero_out_w(w12, LR_idx_toUse)
+        if scale_w:
+            mu = 1
+            w12 = mu * ((self._net_A + 1).sum() + (self._net_B + 1).sum()) / (
+                        2 * w12_orig.sum()) * w12  # scale factor using w12_orig
+
+        w = np.block([[self._net_A + 1, w12],
+                      [w12.T, self._net_B + 1]])
+
+        return w
+
 
 
 class Xct_metrics():
@@ -159,7 +261,7 @@ class Xct(Xct_metrics):
         
         self._metric_A = self.get_metric(ada_A)
         self._metric_B = self.get_metric(ada_B)
-            
+
         self.ref = self.fill_metric()
         self.genes_index = self.get_index(DB = self.ref)
         pcNet_path_A = f'./data/{pcNet_name}_A.csv'
@@ -225,7 +327,7 @@ class Xct(Xct_metrics):
 
             filled = np.concatenate((filled_L[:, None], filled_R[:, None]), axis=1)
             result = pd.DataFrame(data = filled, columns = [f'{metric}_L', f'{metric}_R'])
-            df = pd.concat([df, result], axis=1)   
+            df = pd.concat([df, result], axis=1)
            
         if ref_obj is None:
             df = pd.concat([self.LRs, df], axis=1) # concat 1:1 since sharing same index
