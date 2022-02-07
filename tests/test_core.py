@@ -4,7 +4,7 @@ import itertools
 import pandas as pd
 import numpy as np
 
-from scTenifoldXct.main import null_test, nn_aligned_dist, chi2_test
+from scTenifoldXct.core import null_test, nn_aligned_dist, chi2_test
 
 
 def generate_fake_df_nn(n_ligand=3000, n_receptors=3000, n_cands=200):

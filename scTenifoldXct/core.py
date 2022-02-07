@@ -97,7 +97,6 @@ class Xct_metrics():
         genes = np.ravel(self.LRs.to_numpy()) 
         genes = np.unique(genes[genes != None])
         genes_use = self.genes.intersection(genes)
-            
         return [list(self.genes).index(g) for g in genes_use]    #index in orig adata
     
     def get_index(self, DB):
@@ -537,7 +536,7 @@ def get_genelist(df_enriched, saveas = None):
 
 
 if __name__ == '__main__':
-    import dNN
+    import nn
 
     ada = sc.datasets.paul15()[:, :100] # raw counts
     ada.obs = ada.obs.rename(columns={'paul15_clusters': 'ident'})

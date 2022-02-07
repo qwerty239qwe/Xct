@@ -4,8 +4,8 @@ import numpy as np
 import scanpy as sc
 import scipy
 
-from scTenifoldXct.main import Xct, get_candidates
-from scTenifoldXct.main import get_counts_np
+from scTenifoldXct.core import Xct, get_candidates
+from scTenifoldXct.core import get_counts_np
 
 
 @pytest.fixture(scope="session")

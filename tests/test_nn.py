@@ -1,7 +1,7 @@
 import pytest
 
-from scTenifoldXct.main import get_counts_np
-from scTenifoldXct.dNN import ManifoldAlignmentNet
+from scTenifoldXct.core import get_counts_np
+from scTenifoldXct.nn import ManifoldAlignmentNet
 
 
 @pytest.fixture(scope="package")
