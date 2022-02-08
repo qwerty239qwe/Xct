@@ -11,6 +11,7 @@ import scanpy as sc
 from anndata._core.views import ArrayView
 import anndata
 import scipy
+from scipy import sparse
 from statsmodels.stats.multitest import multipletests
 
 
@@ -29,10 +30,11 @@ class scTenifoldXct:
                  cell_names: List[str],
                  obs_label,  # ident
                  species: str,
-                 GRN_file_name,
+                 GRN_file_dir = None,
                  rebuild_GRN=False,
                  query_DB=None,
                  verbose=True):
+
         if species.lower() not in ["human", "mouse"]:
             raise ValueError("species must be human or mouse")
 
@@ -40,46 +42,63 @@ class scTenifoldXct:
             raise ValueError('queryDB using the keyword None, \'comb\' or \'pairs\'')
 
         self._metrics = ["mean", "var"]
-
         self.verbose = verbose
         self._cell_names = cell_names
         self._cell_data_dic, self._cell_metric_dict = {}, {}
-        self.genes = None
+        self._genes = {}
         for name in self._cell_names:
             self.load_data(data, name, obs_label)
-
         self._species = species
         self._LRs = self._load_db_data(Path(__file__).parent.parent / Path("data/LR.csv"),
                                        ['ligand', 'receptor'])
         # self._TFs = self._load_db_data() # is this an unused db data?
 
         # fill metrics
+        self._LR_metrics = self.fill_metric()
 
+        if GRN_file_dir is not None:
+            self._pc_net_a_file_name = (Path(GRN_file_dir) / Path(f"pcnet_{self._cell_names[0]}"))
+            self._pc_net_b_file_name = (Path(GRN_file_dir) / Path(f"pcnet_{self._cell_names[1]}"))
         # load pcnet
+        if rebuild_GRN:
+            if verbose:
+                print('building GRN...')
+
+            # TODO: change this
+            self._net_A = pcNet(self._cell_data_dic[self._cell_names[0]].to_df(), nComp=5, symmetric=True)
+            if verbose:
+                print('GRN of Cell A has been built, start building GRN of Cell B...')
+
+            self._net_B = pcNet(self._cell_data_dic[self._cell_names[1]].to_df(), nComp=5, symmetric=True)
+            if verbose:
+                print('GRN of Cell B has been built, building correspondence...')
+
+            if GRN_file_dir is not None:
+                os.makedirs('./data', exist_ok = True) # create dir 'data'
+                sparse.save_npz(self._pc_net_a_file_name, self._net_A)
+                sparse.save_npz(self._pc_net_b_file_name, self._net_B)
+        else:
+            try:
+                if verbose:
+                    print('loading GRNs...')
+                self._net_A = sparse.load_npz(self._pc_net_a_file_name)
+                self._net_B = sparse.load_npz(self._pc_net_b_file_name)
+            except ImportError:
+                print('require pcNet_name where csv files saved in with tab as delimiter')
+        if verbose:
+            print('building correspondence...')
+
+        # cal w
 
 
-    @staticmethod
-    def _zero_out_w(w, LR_idx):
-        lig_idx = np.ravel(np.asarray(LR_idx[:, 0]))
-        lig_idx = list(np.unique(lig_idx[lig_idx != 0]) - 1)
-        rec_idx = np.ravel(np.asarray(LR_idx[:, 1]))
-        rec_idx = list(np.unique(rec_idx[rec_idx != 0]) - 1)
-        # reverse select and zeros LR that not in idx list
-        mask_lig = np.ones(w.shape[0], dtype=np.bool)
-        mask_lig[lig_idx] = 0
-        mask_rec = np.ones(w.shape[1], dtype=np.bool)
-        mask_rec[rec_idx] = 0
-        w[mask_lig, :] = 0
-        w[:, mask_rec] = 0
-        assert np.count_nonzero(w) == len(lig_idx) * len(rec_idx)
-        return w
+
 
     def load_data(self, data, cell_name, obs_label):
         if isinstance(data, anndata.AnnData):
-            self.genes = data.var_names
+            self._genes[cell_name] = data.var_names
             self._cell_data_dic[cell_name] = data[data.obs[obs_label] == cell_name, :]
             self._cell_metric_dict[cell_name] = {}
-            self._cell_metric_dict[cell_name] = self._get_metric(self._cell_data_dic[cell_name])
+            self._cell_metric_dict[cell_name] = self._get_metric(self._cell_data_dic[cell_name], cell_name)
 
     def _load_db_data(self, file_path, subsets):
         df = pd.read_csv(file_path)
@@ -90,7 +109,7 @@ class scTenifoldXct:
 
         return df
 
-    def _get_metric(self, adata: ArrayView):  # require normalized data
+    def _get_metric(self, adata: ArrayView, name):  # require normalized data
         '''compute metrics for each gene'''
         data_norm = adata.X.toarray() if scipy.sparse.issparse(adata.X) else adata.X.copy()  # adata.layers['log1p']
         if self.verbose:
@@ -98,50 +117,56 @@ class scTenifoldXct:
         if (data_norm % 1 != 0).any():  # check space: True for log (float), False for counts (int)
             mean = np.mean(data_norm, axis=0)  # .toarray()
             var = np.var(data_norm, axis=0)  # .toarray()
-            return {"mean": dict(zip(self.genes, mean)),
-                    "var": dict(zip(self.genes, var))} # , dispersion, cv
+            return {"mean": dict(zip(self._genes[name], mean)),
+                    "var": dict(zip(self._genes[name], var))} # , dispersion, cv
         raise ValueError("require log data")
 
-    def fill_metric(self, ref_obj=None):
+    def fill_metric(self):
         val_df = pd.DataFrame()
         for c in self._LRs.columns:
             for m in self._metrics:
                 val_df[f"{m}_L"] = self._LRs[c].map(self._cell_metric_dict[self._cell_names[0]]).fillna(0.)
                 val_df[f"{m}_R"] = self._LRs[c].map(self._cell_metric_dict[self._cell_names[1]]).fillna(0.)
-
-        # TODO: refactor this
-        if ref_obj is None:
-            df = pd.concat([self._LRs, val_df], axis=1)  # concat 1:1 since sharing same index
-            mask1 = (df['mean_L'] > 0) & (df['mean_R'] > 0)  # filter 0 (none or zero expression) of LR
-            df = df[mask1]
-        else:
-            ref_DB = self._LRs.iloc[ref_obj.ref.index, :].reset_index(drop=True, inplace=False)  # match index
-            df = pd.concat([ref_DB, val_df], axis=1)
-            df.set_index(pd.Index(ref_obj.ref.index), inplace=True)
-
+        df = pd.concat([self._LRs, val_df], axis=1)  # concat 1:1 since sharing same index
+        df = df[(df['mean_L'] > 0) & (df['mean_R'] > 0)]  # filter 0 (none or zero expression) of LR
         if self.verbose:
             print('Selected {} LR pairs'.format(df.shape[0]))
 
         return df
 
+    @staticmethod
+    def _zero_out_w(w, mask_lig, mask_rec):
+        w[mask_lig, :] = 0
+        w[:, mask_rec] = 0
+        assert np.count_nonzero(w) == sum(mask_lig) * sum(mask_rec)
+        return w
 
-    def _build_w(self, alpha, queryDB=None, scale_w=True):
+    def _build_w(self, alpha, query_DB=None, scale_w=True):
         '''build w: 3 modes, default None will not query the DB and use all pair-wise corresponding scores'''
         # (1-a)*u^2 + a*var
-        metric_A_temp = ((1 - alpha) * np.square(self._metric_A[0]) + alpha * (self._metric_A[1]))[:, None]
-        metric_B_temp = ((1 - alpha) * np.square(self._metric_B[0]) + alpha * (self._metric_B[1]))[None, :]
+        ligand, receptor = self._cell_names[0], self._cell_names[1]
+
+        metric_A_temp = ((1 - alpha) * np.square(self._cell_metric_dict[ligand]["mean"]) +
+                         alpha * (self._cell_metric_dict[ligand]["var"]))[:, None]
+        metric_B_temp = ((1 - alpha) * np.square(self._cell_metric_dict[receptor]["mean"]) +
+                         alpha * (self._cell_metric_dict[receptor]["var"]))[:, None]
         # print(metric_A_temp.shape, metric_B_temp.shape)
         w12 = metric_A_temp @ metric_B_temp
         w12_orig = w12.copy()
-        if queryDB is not None:
-            if queryDB == 'comb':
+        if query_DB is not None:
+            if query_DB == 'comb':
                 # ada.var index of LR genes (the intersect of DB and object genes, no pair relationship maintained)
-                LR_idx_toUse = self._genes_index_DB
-                w12 = self._zero_out_w(w12, LR_idx_toUse)
-            elif queryDB == 'pairs':
+                used_row_index = np.isin(self._genes[ligand], self._LRs["ligand"])
+                used_col_index = np.isin(self._genes[receptor], self._LRs["receptor"])
+            elif query_DB == 'pairs':
                 # maintain L-R pair relationship, both > 0
-                LR_idx_toUse = self._genes_index_DB[(self._genes_index_DB[:, 0] > 0) & (self._genes_index_DB[:, 1] > 0)]
-                w12 = self._zero_out_w(w12, LR_idx_toUse)
+                selected_LR = self._LR_metrics[(self._LR_metrics[f"mean_L"] > 0) & (self._LR_metrics[f"mean_R"] > 0)]
+                used_row_index = np.isin(self._genes[ligand], selected_LR["ligand"])
+                used_col_index = np.isin(self._genes[receptor], selected_LR["receptor"])
+            else:
+                raise ValueError("")
+
+            w12 = self._zero_out_w(w12, used_row_index, used_col_index)
         if scale_w:
             mu = 1
             w12 = mu * ((self._net_A + 1).sum() + (self._net_B + 1).sum()) / (
@@ -263,7 +288,11 @@ class Xct(Xct_metrics):
         self._metric_B = self.get_metric(ada_B)
 
         self.ref = self.fill_metric()
+        print(self.ref)
+
         self.genes_index = self.get_index(DB = self.ref)
+        print(self.genes_index)
+
         pcNet_path_A = f'./data/{pcNet_name}_A.csv'
         pcNet_path_B = f'./data/{pcNet_name}_B.csv'
         if build_GRN: 
@@ -639,6 +668,7 @@ def get_genelist(df_enriched, saveas = None):
 
 if __name__ == '__main__':
     import nn
+    import scanpy as sc
 
     ada = sc.datasets.paul15()[:, :100] # raw counts
     ada.obs = ada.obs.rename(columns={'paul15_clusters': 'ident'})
@@ -646,7 +676,7 @@ if __name__ == '__main__':
     sc.pp.log1p(ada)
     ada.layers['log1p'] = ada.X.copy()
 
-    obj = Xct(ada, '14Mo', '15Mo', build_GRN = True, save_GRN = True, pcNet_name = 'Net_for_Test', queryDB = None, verbose = True)
+    obj = Xct(ada, '14Mo', '15Mo', specis="Mouse", build_GRN = True, save_GRN = True, pcNet_name = 'Net_for_Test', queryDB = None, verbose = True)
     print(obj)
     # obj_load = Xct(ada, '14Mo', '15Mo', build_GRN = False, pcNet_name = 'Net_for_Test', queryDB = None, verbose = True)
     # print('Testing loading...')
@@ -654,7 +684,7 @@ if __name__ == '__main__':
     df1 = obj.fill_metric()
     candidates = obj.get_candidates(df1)
     counts_np = get_counts_np(obj)
-    projections, losses = dNN.train_and_project(counts_np, obj._w, dim = 2, steps = 1000, lr = 0.001)
+    projections, losses = nn.train_and_project(counts_np, obj._w, dim = 2, steps = 1000, lr = 0.001)
 
     df_nn = nn_aligned_dist(obj, projections)
     df_enriched = chi2_test(df_nn, df = 1, FDR = False, candidates = candidates)
