@@ -15,6 +15,8 @@ visual_style_common["edge_curved"] = 0.1
 # visual_style_common["edge_arrow_width"] = 1
 visual_style_common["margin"] = 70
 
+
+
 def plot_pcNet(Xct_obj, view, gene_names, match_fig = None, top_edges = 20, remove_isolated_nodes = True, bbox_scale = 1, mark_color = "whitesmoke",
             show = True, saveas = None, verbose = False, edge_width_scale = None, layout = 'large', visual_style = visual_style_common.copy()):
     '''visualize single cell type GRN, only showing direct edges associated with target genes'''
