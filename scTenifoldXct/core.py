@@ -19,10 +19,10 @@ from .stat import null_test, chi2_test
 sc.settings.verbosity = 0
 
 
-class PCNet:
+class GRN:
     def __init__(self,
-                 name: str,
-                 data = None,
+                 name: str = None,
+                 data: anndata.AnnData = None,
                  GRN_file_dir: PathLike = None,
                  rebuild_GRN: bool = False,
                  verbose: bool = True,
@@ -35,6 +35,7 @@ class PCNet:
             if verbose:
                 print(f'building GRN {name}...')
             self._net = cal_pcNet(data.to_df().T, nComp=5, symmetric=True, **kwargs)
+            self._gene_names = data.var_names.copy(deep=True)
             if verbose:
                 print(f'GRN of {name} has been built')
 
@@ -44,11 +45,71 @@ class PCNet:
         else:
             if verbose:
                 print(f'loading GRN {name}...')
-            self._net = sparse.load_npz(self._pc_net_file_name)
+            if GRN_file_dir is not None:
+                self._gene_names = pd.Index(pd.read_csv(Path(GRN_file_dir) / Path("gene_name.tsv"), sep='\t')["gene_name"])
+                self._net = sparse.load_npz(self._pc_net_file_name)
+
+    @classmethod
+    def from_sparse(cls, name, sparse_matrix, gene_names):
+        obj = cls(name)
+        obj.set_value(sparse_matrix, gene_names)
+        return obj
+
+    @classmethod
+    def load(cls, dir_name, pcnet_name):
+        return cls(name=pcnet_name, GRN_file_dir=dir_name)
 
     @property
     def net(self) -> sparse.coo_matrix:
         return self._net
+
+    @property
+    def gene_names(self):
+        return self._gene_names
+
+    def set_value(self, sparse_matrix: sparse.coo_matrix, gene_names):
+        if sparse_matrix.shape[0] != sparse_matrix.shape[1]:
+            raise ValueError("sparse_matrix should be a square sparse matrix"
+                             f"({sparse_matrix.shape[0]} != {sparse_matrix.shape[1]})")
+        if sparse_matrix.shape[0] != len(gene_names):
+            raise ValueError(f"gene_names should have the same length as the sparse_matrix "
+                             f"({sparse_matrix.shape[0]} != {len(gene_names)})")
+
+        self._net = sparse_matrix
+        self._gene_names = gene_names
+
+    def save(self, dir_name):
+        Path(dir_name).mkdir(parents=True, exist_ok=True)
+        sparse.save_npz(self._pc_net_file_name, self._net)
+        pd.DataFrame({"gene_name": self._gene_names}).to_csv(Path(dir_name) / Path("gene_name.tsv"), sep='\t')
+
+    def subset_in(self, values):
+        bool_ind = self._gene_names.isin(values)
+        self._net = self._net.tocsr()[bool_ind, bool_ind]
+        self._gene_names = self._gene_names[bool_ind]
+
+    def concat(self, grn, axis=0):
+        if axis not in [0, 1]:
+            raise ValueError("axis should be either 0 or 1.")
+        concat_method = sparse.vstack if axis == 0 else sparse.hstack
+        self._net = concat_method([self._net, grn.net])
+        self._gene_names = pd.Index(pd.concat([self.gene_names.to_series(), grn.gene_names.to_series()]))
+
+
+def concat_grns(grns, axis=0):
+    """
+    concat multiple GRNs
+    :param grns:
+    :param axis:
+    :return:
+    """
+    if axis not in [0, 1]:
+        raise ValueError("axis should be either 0 or 1.")
+    concat_method = sparse.vstack if axis == 0 else sparse.hstack
+    obj = GRN()
+    obj.set_value(concat_method([grn.net for grn in grns]),
+                  gene_names=pd.Index(pd.concat([grn.gene_names.to_series() for grn in grns])))
+    return obj
 
 
 class scTenifoldXct:
@@ -88,16 +149,16 @@ class scTenifoldXct:
         self._LR_metrics = self.fill_metric()
         self._candidates = self._get_candidates(self._LR_metrics)
 
-        self._net_A = PCNet(name=self._cell_names[0],
-                            data=self._cell_data_dic[self._cell_names[0]],
-                            GRN_file_dir=GRN_file_dir,
-                            rebuild_GRN=rebuild_GRN,
-                            verbose=verbose)
-        self._net_B = PCNet(name=self._cell_names[1],
-                            data=self._cell_data_dic[self._cell_names[1]],
-                            GRN_file_dir=GRN_file_dir,
-                            rebuild_GRN=rebuild_GRN,
-                            verbose=verbose)
+        self._net_A = GRN(name=self._cell_names[0],
+                          data=self._cell_data_dic[self._cell_names[0]],
+                          GRN_file_dir=GRN_file_dir,
+                          rebuild_GRN=rebuild_GRN,
+                          verbose=verbose)
+        self._net_B = GRN(name=self._cell_names[1],
+                          data=self._cell_data_dic[self._cell_names[1]],
+                          GRN_file_dir=GRN_file_dir,
+                          rebuild_GRN=rebuild_GRN,
+                          verbose=verbose)
         if verbose:
             print('building correspondence...')
 
@@ -116,6 +177,14 @@ class scTenifoldXct:
         self._aligned_result = self._nn_trainer.nn_aligned_dist(gene_names_x=self._genes[self._cell_names[0]],
                                                                 gene_names_y=self._genes[self._cell_names[1]],
                                                                 w12_shape=w12_shape)
+
+    @property
+    def nn_trainer(self):
+        return self._nn_trainer
+
+    @property
+    def aligned_dist(self):
+        return self._aligned_result
 
     def knock_out(self, ko_gene_list):
         gene_idx = pd.concat([self._genes[self._cell_names[0]].to_series(),

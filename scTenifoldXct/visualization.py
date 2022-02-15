@@ -2,19 +2,34 @@ import igraph as ig
 import numpy as np
 import pandas as pd
 import warnings
+from collections import namedtuple
 
 def get_Xct_pairs(df):
     return tuple(n.split('_') for n in list(df.index))
 
-visual_style_common = {}
-visual_style_common["vertex_size"] = 50
-visual_style_common["vertex_label_size"] = 12
-visual_style_common["vertex_label_dist"] = 0.0
-visual_style_common["edge_curved"] = 0.1
-# visual_style_common["edge_arrow_size"] = 1
-# visual_style_common["edge_arrow_width"] = 1
-visual_style_common["margin"] = 70
+Style = namedtuple("visual_style", ["vertex_size",
+                                    "vertex_label_size",
+                                    "vertex_label_dist", "edge_curved", "margin"])
 
+
+visual_style_common = Style(vertex_size=50,
+                            vertex_label_size=12,
+                            vertex_label_dist=0.0,
+                            edge_curved=0.1,
+                            margin=70)
+
+def plot_pcNet_method(net,
+                      match_fig=None,
+                      top_edges=20,
+                      remove_isolated_nodes=True,
+                      bbox_scale=1,
+                      mark_color="whitesmoke",
+                      show=True,
+                      file_name=None,
+                      verbose=False,
+                      edge_width_scale=None,
+                      layout='large'):
+    pass
 
 
 def plot_pcNet(Xct_obj, view, gene_names, match_fig = None, top_edges = 20, remove_isolated_nodes = True, bbox_scale = 1, mark_color = "whitesmoke",
