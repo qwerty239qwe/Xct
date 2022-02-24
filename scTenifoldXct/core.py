@@ -15,6 +15,7 @@ from scipy import sparse
 from scTenifold import cal_pcNet
 from .nn import ManifoldAlignmentNet
 from .stat import null_test, chi2_test
+from .visualization import plot_pcNet_method
 
 sc.settings.verbosity = 0
 
@@ -29,7 +30,7 @@ class GRN:
                  **kwargs):
         self.kws = kwargs
         if GRN_file_dir is not None:
-            self._pc_net_file_name = (Path(GRN_file_dir) / Path(f"pcnet_{name}"))
+            self._pc_net_file_name = (Path(GRN_file_dir) / Path(f"pcnet_{name}.npz"))
         # load pcnet
         if rebuild_GRN:
             if verbose:
@@ -40,13 +41,16 @@ class GRN:
                 print(f'GRN of {name} has been built')
 
             if GRN_file_dir is not None:
-                os.makedirs('./data', exist_ok = True) # create dir 'data'
+                os.makedirs(GRN_file_dir, exist_ok = True)
                 sparse.save_npz(self._pc_net_file_name, self._net)
+                self._gene_names.to_frame(name="gene_name").to_csv(Path(GRN_file_dir) / Path(f"gene_name_{name}.tsv"),
+                                                                   sep='\t')
         else:
             if verbose:
                 print(f'loading GRN {name}...')
             if GRN_file_dir is not None:
-                self._gene_names = pd.Index(pd.read_csv(Path(GRN_file_dir) / Path("gene_name.tsv"), sep='\t')["gene_name"])
+                self._gene_names = pd.Index(pd.read_csv(Path(GRN_file_dir) / Path(f"gene_name_{name}.tsv"),
+                                                        sep='\t')["gene_name"])
                 self._net = sparse.load_npz(self._pc_net_file_name)
 
     @classmethod
@@ -78,12 +82,28 @@ class GRN:
         self._net = sparse_matrix
         self._gene_names = gene_names
 
+    def set_rows_as(self, gene_names, value):
+        self._net[self._gene_names.isin(gene_names), :] = value
+
+    def set_cols_as(self, gene_names, value):
+        self._net[:, self._gene_names.isin(gene_names)] = value
+
+    def copy(self):
+        new_net = GRN()
+        new_net.set_value(self._net.copy(), self._gene_names.copy())
+        return new_net
+
     def save(self, dir_name):
         Path(dir_name).mkdir(parents=True, exist_ok=True)
         sparse.save_npz(self._pc_net_file_name, self._net)
         pd.DataFrame({"gene_name": self._gene_names}).to_csv(Path(dir_name) / Path("gene_name.tsv"), sep='\t')
 
-    def subset_in(self, values):
+    def subset_in(self, values, copy=True):
+        if copy:
+            new_net = self.copy()
+            new_net.subset_in(values=values, copy=False)
+            return new_net
+
         bool_ind = self._gene_names.isin(values)
         self._net = self._net.tocsr()[bool_ind, bool_ind]
         self._gene_names = self._gene_names[bool_ind]
@@ -117,8 +137,8 @@ class scTenifoldXct:
                  data,
                  cell_names: List[str],
                  obs_label: str,  # ident
-                 species: str,
-                 GRN_file_dir: PathLike = None,
+                 species: str = "human",
+                 GRN_file_dir: [str, PathLike] = None,
                  rebuild_GRN: bool = False,
                  query_DB: str = None,
                  alpha: float = 0.55,
@@ -143,7 +163,7 @@ class scTenifoldXct:
         self._species = species
         self._LRs = self._load_db_data(Path(__file__).parent.parent / Path("data/LR.csv"),
                                        ['ligand', 'receptor'])
-        # self._TFs = self._load_db_data() # is this an unused db data?
+        self._TFs = self._load_db_data(Path(__file__).parent.parent / Path("data/TF.csv"), None)
 
         # fill metrics
         self._LR_metrics = self.fill_metric()
@@ -163,10 +183,10 @@ class scTenifoldXct:
             print('building correspondence...')
 
         # cal w
-        self._w, w12_shape = self._build_w(alpha=alpha,
-                                           query_DB=query_DB,
-                                           scale_w=scale_w,
-                                           mu=mu)
+        self._w, self.w12_shape = self._build_w(alpha=alpha,
+                                                query_DB=query_DB,
+                                                scale_w=scale_w,
+                                                mu=mu)
 
         self._nn_trainer = ManifoldAlignmentNet(self._get_data_arr(),
                                                 w=self._w,
@@ -174,9 +194,7 @@ class scTenifoldXct:
                                                 layers=None,
                                                 verbose=verbose)
 
-        self._aligned_result = self._nn_trainer.nn_aligned_dist(gene_names_x=self._genes[self._cell_names[0]],
-                                                                gene_names_y=self._genes[self._cell_names[1]],
-                                                                w12_shape=w12_shape)
+        self._aligned_result = None
 
     @property
     def nn_trainer(self):
@@ -184,6 +202,10 @@ class scTenifoldXct:
 
     @property
     def aligned_dist(self):
+        if self._aligned_result is None:
+            raise AttributeError("No aligned_dist created yet. "
+                                 "Please call train_nn() to train the neural network first.")
+
         return self._aligned_result
 
     def knock_out(self, ko_gene_list):
@@ -252,20 +274,26 @@ class scTenifoldXct:
         assert np.count_nonzero(w) == sum(mask_lig) * sum(mask_rec)
         return w.tocoo()
 
+    @staticmethod
+    def _build_metric_vec(dic, gene_names):
+        return np.array([dic[g] if g in dic else np.nan for g in gene_names])
+
     def _build_w(self, alpha, query_DB=None, scale_w=True, mu: float = 1.) -> (sparse.coo_matrix, (int, int)):
         '''build w: 3 modes, default None will not query the DB and use all pair-wise corresponding scores'''
         # (1-a)*u^2 + a*var
         ligand, receptor = self._cell_names[0], self._cell_names[1]
 
-        metric_a_temp = ((1 - alpha) * np.square(self._cell_metric_dict[ligand]["mean"]) +
-                         alpha * (self._cell_metric_dict[ligand]["var"]))[:, None]
-        metric_b_temp = ((1 - alpha) * np.square(self._cell_metric_dict[receptor]["mean"]) +
-                         alpha * (self._cell_metric_dict[receptor]["var"]))[:, None]
-
-        # print(metric_A_temp.shape, metric_B_temp.shape)
+        metric_a_temp = ((1 - alpha) * np.square(self._build_metric_vec(dic=self._cell_metric_dict[ligand]["mean"],
+                                                                        gene_names=self._genes[ligand])) +
+                         alpha * (self._build_metric_vec(dic=self._cell_metric_dict[ligand]["var"],
+                                                         gene_names=self._genes[ligand])))[:, None]
+        metric_b_temp = ((1 - alpha) * np.square(self._build_metric_vec(dic=self._cell_metric_dict[receptor]["mean"],
+                                                                        gene_names=self._genes[ligand])) +
+                         alpha * (self._build_metric_vec(dic=self._cell_metric_dict[receptor]["var"],
+                                                         gene_names=self._genes[ligand])))[:, None]
 
         # make it sparse to reduce mem usage
-        w12 = sparse.coo_matrix(metric_a_temp @ metric_b_temp)
+        w12 = sparse.coo_matrix(metric_a_temp @ metric_b_temp.T)
         del metric_a_temp
         del metric_b_temp
 
@@ -289,11 +317,11 @@ class scTenifoldXct:
             w12 = mu * ((self._net_A.net.sum() + self._net_A.net.shape[0] * self._net_A.net.shape[1]) +
                         (self._net_B.net.sum() + self._net_B.net.shape[0] * self._net_B.net.shape[1])) / (
                         2 * w12_orig_sum) * w12  # scale factor using w12_orig
-
+        w12 = w12.todok()
         if self.verbose:
             print(f"Trying to concatenate pcnet using {self._net_A}")
-        w = sparse.vstack([sparse.hstack([self._net_A.net + 1, w12]),
-                           sparse.hstack([w12.T, self._net_B.net + 1])])
+        w = sparse.vstack([sparse.hstack([self._net_A.net.todok() + 1, w12]),
+                           sparse.hstack([w12.T, self._net_B.net.todok() + 1])])
 
         return w, w12.shape
 
@@ -309,24 +337,33 @@ class scTenifoldXct:
                  verbose=True,
                  plot_losses: bool = True,
                  losses_file_name: str = None,
+                 dist_metric: str = "euclidean",
+                 rank: bool = False,
                  **optim_kwargs
                  ):
         projections, losses = self._nn_trainer.train(n_steps=n_steps, lr=lr, verbose=verbose, **optim_kwargs)
         if plot_losses:
             self._nn_trainer.plot_losses(losses_file_name)
 
+        self._aligned_result = self._nn_trainer.nn_aligned_dist(gene_names_x=self._genes[self._cell_names[0]],
+                                                                gene_names_y=self._genes[self._cell_names[1]],
+                                                                w12_shape=self.w12_shape,
+                                                                dist_metric=dist_metric,
+                                                                rank=rank)
+
         return projections, losses
 
     def plot_losses(self, **kwargs):
         self._nn_trainer.plot_losses(**kwargs)
 
-    def add_names_to_nets(self):
+    def plot_pcNet_graph(self, gene_names, view='sender', **kwargs):
+        if view not in ["sender", "receiver"]:
+            raise ValueError("view needs to be sender or receiver")
 
-        # TODO: modify this -> plot_pcnet
-        '''for graph visualization'''
-        self._net_A = pd.DataFrame(self._net_A, columns = self.genes_names[0], index = self.genes_names[0])
-        self._net_B = pd.DataFrame(self._net_B, columns = self.genes_names[1], index = self.genes_names[1])
-        print('completed.')
+        plot_pcNet_method(self._net_A if view == "sender" else self._net_B,
+                          gene_names=gene_names,
+                          tf_names=self._TFs["TF_symbol"].to_list(),
+                          **kwargs)
 
     def null_test(self,
                   filter_zeros: bool = True,
