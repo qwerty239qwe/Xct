@@ -11,7 +11,7 @@ from scTenifoldXct.core import scTenifoldXct
 
 @pytest.fixture(scope="session")
 def ada_skin():
-    data_path = Path(__file__) / "../data/LS.h5ad"
+    data_path = Path(__file__).parent.parent / "./data/LS.h5ad"
     ada = sc.read_h5ad(data_path)
     data = scipy.sparse.csr_matrix.toarray(ada.X)
     counts = np.asarray(np.expm1(data), dtype=int)
