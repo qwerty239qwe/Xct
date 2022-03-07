@@ -1,5 +1,5 @@
 import pytest
-import pkgutil
+from pathlib import Path
 
 import numpy as np
 import scanpy as sc
@@ -11,7 +11,8 @@ from scTenifoldXct.core import scTenifoldXct
 
 @pytest.fixture(scope="session")
 def ada_skin():
-    ada = sc.read_h5ad(pkgutil.get_data("", "./data/LS.h5ad"))
+    data_path = Path(__file__) / "../data/LS.h5ad"
+    ada = sc.read_h5ad(data_path)
     data = scipy.sparse.csr_matrix.toarray(ada.X)
     counts = np.asarray(np.expm1(data), dtype=int)
     ada.layers['raw'] = counts

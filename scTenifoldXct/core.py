@@ -28,6 +28,24 @@ class GRN:
                  rebuild_GRN: bool = False,
                  verbose: bool = True,
                  **kwargs):
+        """
+        A gene regulatory network object containing a gene list and a sparse network
+
+        Parameters
+        ----------
+        name: str
+            The name of this object, it will be used to name the saved GRN
+        data: anndata.AnnData
+            The data used to construct this object
+        GRN_file_dir: PathLike
+            The dir path containing the saved GRN
+        rebuild_GRN: bool
+            To rebuild the GRN using the input data
+        verbose: bool
+            To print the messages during processing
+        kwargs: dict
+            The keyword arguments for rebuilding the GRN using pcnet reconstruction method
+        """
         self.kws = kwargs
         if GRN_file_dir is not None:
             self._pc_net_file_name = (Path(GRN_file_dir) / Path(f"pcnet_{name}.npz"))
@@ -55,6 +73,19 @@ class GRN:
 
     @classmethod
     def from_sparse(cls, name, sparse_matrix, gene_names):
+        """
+        Build the GRN object from a sparse matrix and a list of gene names
+
+        Parameters
+        ----------
+        name: str
+        sparse_matrix
+        gene_names
+
+        Returns
+        -------
+        grn_obj: GRN
+        """
         obj = cls(name)
         obj.set_value(sparse_matrix, gene_names)
         return obj
@@ -120,12 +151,21 @@ class GRN:
         self._gene_names = pd.Index(pd.concat([self.gene_names.to_series(), grn.gene_names.to_series()]))
 
 
-def concat_grns(grns, axis=0):
+def concat_grns(grns, axis: int = 0):
     """
-    concat multiple GRNs
-    :param grns:
-    :param axis:
-    :return:
+    Concatenate multiple GRNs along an axis
+
+    Parameters
+    ----------
+    grns: A list of GRN
+        An array or list of GRNs
+    axis: int
+        The axis to concatenate along (0: row, 1: col)
+
+    Returns
+    -------
+    grn_obj: GRN
+
     """
     if axis not in [0, 1]:
         raise ValueError("axis should be either 0 or 1.")
