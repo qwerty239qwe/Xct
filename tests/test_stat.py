@@ -34,4 +34,5 @@ def test_null_test(df_nn, candidates, filter_zeros):
 
 
 def test_chi2_test(xct_skin):
+    xct_skin.train_nn(n_steps= 1000, lr = 0.001)
     xct_skin.chi2_test(dof=3, pval=0.05, cal_FDR=True, plot_result=True)

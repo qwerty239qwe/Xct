@@ -178,7 +178,7 @@ def concat_grns(grns, axis: int = 0):
 
 class scTenifoldXct:
     def __init__(self,
-                 data,
+                 data: anndata.AnnData,
                  cell_names: List[str],
                  obs_label: str,  # ident
                  species: str = "human",
@@ -190,6 +190,26 @@ class scTenifoldXct:
                  scale_w: bool = True,
                  n_dim: int = 3,
                  verbose=True):
+        """
+        The main object used to do xct analysis.
+
+        Parameters
+        ----------
+        data: anndata.AnnData
+            The data used to generate GRNs, manifold alignment results
+        cell_names: A list of str
+            The names of the data
+        obs_label: str
+        species: str
+        GRN_file_dir
+        rebuild_GRN
+        query_DB
+        alpha
+        mu
+        scale_w
+        n_dim
+        verbose
+        """
 
         if species.lower() not in ["human", "mouse"]:
             raise ValueError("species must be human or mouse")
