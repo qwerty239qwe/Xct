@@ -5,7 +5,7 @@ import itertools
 import pandas as pd
 import numpy as np
 
-from scTenifoldXct.core import null_test, chi2_test
+from scTenifoldXct.core import null_test
 
 
 def generate_fake_df_nn(n_ligand=3000, n_receptors=3000, n_cands=200):
@@ -33,5 +33,5 @@ def test_null_test(df_nn, candidates, filter_zeros):
     null_test(df_nn=df_nn, candidates=candidates, filter_zeros=filter_zeros)
 
 
-def test_chi2_test(df_nn_skin, candidates_skin):
-    chi2_test(df_nn_skin, df=3, pval=0.05, FDR=True, candidates=candidates_skin, plot=True)
+def test_chi2_test(xct_skin):
+    xct_skin.chi2_test(dof=3, pval=0.05, cal_FDR=True, plot_result=True)
