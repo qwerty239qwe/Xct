@@ -27,7 +27,7 @@ def xct_skin(ada_skin):
                          cell_names=['Inflam. FIB', 'Inflam. DC'],
                          obs_label="ident",
                          species="human",
-                         rebuild_GRN=False,
+                         rebuild_GRN=True,
                          GRN_file_dir='./skin_net',
                          verbose = True)
 
