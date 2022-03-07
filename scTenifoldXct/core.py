@@ -68,6 +68,10 @@ class GRN:
         return self._net
 
     @property
+    def shape(self):
+        return self._net.shape
+
+    @property
     def gene_names(self):
         return self._gene_names
 
@@ -199,6 +203,18 @@ class scTenifoldXct:
     @property
     def nn_trainer(self):
         return self._nn_trainer
+
+    @property
+    def w(self):
+        return self._w
+
+    @property
+    def net_A(self):
+        return self._net_A
+
+    @property
+    def net_B(self):
+        return self._net_B
 
     @property
     def aligned_dist(self):
